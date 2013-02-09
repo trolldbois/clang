@@ -32,7 +32,7 @@
  * compatible, thus CINDEX_VERSION_MAJOR is expected to remain stable.
  */
 #define CINDEX_VERSION_MAJOR 0
-#define CINDEX_VERSION_MINOR 11
+#define CINDEX_VERSION_MINOR 12
 
 #define CINDEX_VERSION_ENCODE(major, minor) ( \
       ((major) * 10000)                       \
@@ -2889,6 +2889,27 @@ CINDEX_LINKAGE CXType clang_getArrayElementType(CXType T);
  * If a non-array type is passed in, -1 is returned.
  */
 CINDEX_LINKAGE long long clang_getArraySize(CXType T);
+
+/**
+ * \brief Return the alignment value for a record, in bytes.
+ *
+ * If the cursor is not a record declaration, -1 is returned.
+ */
+CINDEX_LINKAGE long long clang_getRecordAlignment(CXCursor C);
+
+/**
+ * \brief Return the offset of a field in a record in bits.
+ *
+ * If the cursor is not a record field declaration, -1 is returned.
+ */
+CINDEX_LINKAGE long long clang_getRecordFieldOffset(CXCursor C);
+
+/**
+ * \brief Return the size of a record in bytes.
+ *
+ * If the cursor is not a record declaration, -1 is returned.
+ */
+CINDEX_LINKAGE long long clang_getRecordSize(CXCursor C);
 
 /**
  * \brief Returns 1 if the base class specified by the cursor with kind
