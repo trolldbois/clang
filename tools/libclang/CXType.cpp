@@ -20,6 +20,7 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/RecordLayout.h"
 #include "clang/AST/Type.h"
 #include "clang/Frontend/ASTUnit.h"
 
@@ -660,6 +661,46 @@ CXString clang_getDeclObjCTypeEncoding(CXCursor C) {
   }
 
   return cxstring::createDup(encoding);
+}
+
+long long clang_getRecordSize(CXCursor C) {
+  if (!clang_isDeclaration(C.kind))
+    return -1;
+  const Decl *D = cxcursor::getCursorDecl(C);
+  const RecordDecl *RD = dyn_cast<RecordDecl>(D);
+  if (!RD)
+    return -1;
+
+  ASTContext &Ctx = cxcursor::getCursorContext(C);
+  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(RD);
+  return Layout.getSize().getQuantity();
+}
+
+long long clang_getRecordAlignment(CXCursor C) {
+  if (!clang_isDeclaration(C.kind))
+    return -1;
+  const Decl *D = cxcursor::getCursorDecl(C);
+  const RecordDecl *RD = dyn_cast<RecordDecl>(D);
+  if (!RD)
+    return -1;
+
+  ASTContext &Ctx = cxcursor::getCursorContext(C);
+  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(RD);
+  return Layout.getAlignment().getQuantity(); 
+}
+
+long long clang_getRecordFieldOffset(CXCursor C) {
+  if (!clang_isDeclaration(C.kind))
+    return -1;
+  const Decl *D = cxcursor::getCursorDecl(C);
+  const FieldDecl *F = dyn_cast<FieldDecl>(D);
+  if (!F)
+    return -1;
+
+  ASTContext &Ctx = cxcursor::getCursorContext(C);
+  unsigned FieldNo = F->getFieldIndex();
+  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(F->getParent());
+  return Layout.getFieldOffset(FieldNo); 
 }
 
 } // end: extern "C"
