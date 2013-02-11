@@ -162,9 +162,9 @@ void USRGenerator::VisitDeclContext(const DeclContext *DC) {
 void USRGenerator::VisitFieldDecl(const FieldDecl *D) {
   // The USR for an ivar declared in a class extension is based on the
   // ObjCInterfaceDecl, not the ObjCCategoryDecl.
-  if (const ObjCInterfaceDecl *ID = Context->getObjContainingInterface(D))
-    Visit(ID);
-  else
+  //if (const ObjCInterfaceDecl *ID = Context->getObjContainingInterface(D))
+  //  Visit(ID);
+  //else
     VisitDeclContext(D->getDeclContext());
   Out << (isa<ObjCIvarDecl>(D) ? "@" : "@FI@");
   if (EmitDeclName(D)) {
@@ -367,9 +367,9 @@ void USRGenerator::VisitObjCContainerDecl(const ObjCContainerDecl *D) {
 void USRGenerator::VisitObjCPropertyDecl(const ObjCPropertyDecl *D) {
   // The USR for a property declared in a class extension or category is based
   // on the ObjCInterfaceDecl, not the ObjCCategoryDecl.
-  if (const ObjCInterfaceDecl *ID = Context->getObjContainingInterface(D))
-    Visit(ID);
-  else
+  //if (const ObjCInterfaceDecl *ID = Context->getObjContainingInterface(dyn_cast<const NamedDecl>(D)))
+  //  Visit(ID);
+  //else
     Visit(cast<Decl>(D->getDeclContext()));
   GenObjCProperty(D->getName());
 }
@@ -596,7 +596,7 @@ void USRGenerator::VisitType(QualType T) {
         case BuiltinType::OCLImage2dArray:
         case BuiltinType::OCLImage3d:
         case BuiltinType::OCLEvent:
-        case BuiltinType::OCLSampler:
+//        case BuiltinType::OCLSampler:
           IgnoreResults = true;
           return;
         case BuiltinType::ObjCId:

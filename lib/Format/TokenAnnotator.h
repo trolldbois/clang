@@ -35,13 +35,15 @@ enum TokenType {
   TT_CtorInitializerColon,
   TT_ImplicitStringLiteral,
   TT_LineComment,
+  TT_ObjCArrayLiteral,
   TT_ObjCBlockLParen,
   TT_ObjCDecl,
-  TT_ObjCMethodSpecifier,
+  TT_ObjCForIn,
   TT_ObjCMethodExpr,
+  TT_ObjCMethodSpecifier,
   TT_ObjCProperty,
   TT_ObjCSelectorName,
-  TT_OverloadedOperator,
+  TT_OverloadedOperatorLParen,
   TT_PointerOrReference,
   TT_PureVirtualSpecifier,
   TT_RangeBasedForLoopColon,
@@ -67,7 +69,7 @@ enum LineType {
 class AnnotatedToken {
 public:
   explicit AnnotatedToken(const FormatToken &FormatTok)
-      : FormatTok(FormatTok), Type(TT_Unknown), SpaceRequiredBefore(false),
+      : FormatTok(FormatTok), Type(TT_Unknown), SpacesRequiredBefore(0),
         CanBreakBefore(false), MustBreakBefore(false),
         ClosesTemplateDeclaration(false), MatchingParen(NULL),
         ParameterCount(1), BindingStrength(0), SplitPenalty(0),
@@ -86,7 +88,7 @@ public:
 
   TokenType Type;
 
-  bool SpaceRequiredBefore;
+  unsigned SpacesRequiredBefore;
   bool CanBreakBefore;
   bool MustBreakBefore;
 
@@ -177,8 +179,9 @@ inline prec::Level getPrecedence(const AnnotatedToken &Tok) {
 /// \c UnwrappedLine.
 class TokenAnnotator {
 public:
-  TokenAnnotator(const FormatStyle &Style, SourceManager &SourceMgr, Lexer &Lex)
-      : Style(Style), SourceMgr(SourceMgr), Lex(Lex) {
+  TokenAnnotator(const FormatStyle &Style, SourceManager &SourceMgr, Lexer &Lex,
+                 IdentifierInfo &Ident_in)
+      : Style(Style), SourceMgr(SourceMgr), Lex(Lex), Ident_in(Ident_in) {
   }
 
   void annotate(AnnotatedLine &Line);
@@ -200,6 +203,9 @@ private:
   const FormatStyle &Style;
   SourceManager &SourceMgr;
   Lexer &Lex;
+
+  // Contextual keywords:
+  IdentifierInfo &Ident_in;
 };
 
 } // end namespace format

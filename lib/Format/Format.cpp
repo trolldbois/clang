@@ -26,9 +26,6 @@
 #include "llvm/Support/Debug.h"
 #include <string>
 
-// Uncomment to get debug output from tests:
-// #define DEBUG_WITH_TYPE(T, X) do { X; } while(0)
-
 namespace clang {
 namespace format {
 
@@ -489,9 +486,7 @@ private:
           (RootToken.is(tok::kw_for) || State.ParenLevel == 0))
         State.VariablePos = State.Column - Previous.FormatTok.TokenLength;
 
-      unsigned Spaces = State.NextToken->SpaceRequiredBefore ? 1 : 0;
-      if (State.NextToken->Type == TT_LineComment)
-        Spaces = Style.SpacesBeforeTrailingComments;
+      unsigned Spaces = State.NextToken->SpacesRequiredBefore;
 
       if (!DryRun)
         Whitespaces.replaceWhitespace(Current, 0, Spaces, State.Column, Style);
@@ -804,9 +799,10 @@ public:
 
     // Consume and record whitespace until we find a significant token.
     while (FormatTok.Tok.is(tok::unknown)) {
-      FormatTok.NewlinesBefore += Text.count('\n');
-      FormatTok.HasUnescapedNewline =
-          Text.count("\\\n") != FormatTok.NewlinesBefore;
+      unsigned Newlines = Text.count('\n');
+      unsigned EscapedNewlines = Text.count("\\\n");
+      FormatTok.NewlinesBefore += Newlines;
+      FormatTok.HasUnescapedNewline |= EscapedNewlines != Newlines;
       FormatTok.WhiteSpaceLength += FormatTok.Tok.getLength();
 
       if (FormatTok.Tok.is(tok::eof))
@@ -845,6 +841,8 @@ public:
 
     return FormatTok;
   }
+
+  IdentifierTable &getIdentTable() { return IdentTable; }
 
 private:
   FormatToken FormatTok;
@@ -913,7 +911,8 @@ public:
     UnwrappedLineParser Parser(Diag, Style, Tokens, *this);
     StructuralError = Parser.parse();
     unsigned PreviousEndOfLineColumn = 0;
-    TokenAnnotator Annotator(Style, SourceMgr, Lex);
+    TokenAnnotator Annotator(Style, SourceMgr, Lex,
+                             Tokens.getIdentTable().get("in"));
     for (unsigned i = 0, e = AnnotatedLines.size(); i != e; ++i) {
       Annotator.annotate(AnnotatedLines[i]);
     }
@@ -1098,7 +1097,7 @@ private:
     AnnotatedToken *Tok = &(I + 1)->First;
     if (Tok->Children.empty() && Tok->is(tok::r_brace) &&
         !Tok->MustBreakBefore && Tok->TotalLength <= Limit) {
-      Tok->SpaceRequiredBefore = false;
+      Tok->SpacesRequiredBefore = 0;
       join(Line, *(I + 1));
       I += 1;
     } else {
