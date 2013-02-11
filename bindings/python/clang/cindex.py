@@ -1319,7 +1319,7 @@ class Cursor(Structure):
         Retrieve the alignment of the record.
         """
         if not hasattr(self, '_record_align'):
-            self._record_align = conf.lib.clang_getRecordAlignment(self._tu, self)
+            self._record_align = conf.lib.clang_getRecordAlignment(self)
         return self._record_align
 
     def get_record_field_offset(self):
@@ -1327,7 +1327,7 @@ class Cursor(Structure):
         Retrieve the offset of a field in his record, in number of bits.
         """
         if not hasattr(self, '_record_field_offset'):
-            self._record_field_offset = conf.lib.clang_getRecordFieldOffset(self._tu, self)
+            self._record_field_offset = conf.lib.clang_getRecordFieldOffset(self)
         return self._record_field_offset
 
     def get_record_size(self):
@@ -1335,7 +1335,7 @@ class Cursor(Structure):
         Retrieve the size of the record.
         """
         if not hasattr(self, '_record_size'):
-            self._record_size = conf.lib.clang_getRecordSize(self._tu, self)
+            self._record_size = conf.lib.clang_getRecordSize(self)
         return self._record_size
 
     @staticmethod
@@ -2909,15 +2909,15 @@ functionList = [
    Type.from_result),
 
   ("clang_getRecordAlignment",
-   [TranslationUnit, Cursor],
+   [Cursor],
    c_longlong),
 
   ("clang_getRecordFieldOffset",
-   [TranslationUnit, Cursor],
+   [Cursor],
    c_longlong),
 
   ("clang_getRecordSize",
-   [TranslationUnit, Cursor],
+   [Cursor],
    c_ulonglong),
 
   ("clang_getSpecializedCursorTemplate",

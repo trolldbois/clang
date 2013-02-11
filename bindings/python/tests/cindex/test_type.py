@@ -92,7 +92,7 @@ def test_a_struct():
         3*ctypes.sizeof(ctypes.c_long)+ctypes.sizeof(ctypes.POINTER(ctypes.c_int)) )
     
     s = fields[7].get_record_field_offset()/8+ctypes.sizeof(ctypes.POINTER(ctypes.c_int))
-    assert conf.lib.clang_getRecordSize(tu, teststruct) == s+s%align 
+    assert conf.lib.clang_getRecordSize(teststruct) == s+s%align 
 
 def test_references():
     """Ensure that a Type maintains a reference to a TranslationUnit."""
