@@ -635,6 +635,48 @@ long long clang_getArraySize(CXType CT) {
   return result;
 }
 
+long long clang_getRecordAlignment(CXType T) {
+  CXCursor C = clang_getTypeDeclaration(T);
+  if (!clang_isDeclaration(C.kind))
+    return -1;
+  const Decl *D = cxcursor::getCursorDecl(C);
+  const RecordDecl *RD = dyn_cast<RecordDecl>(D);
+  if (!RD)
+    return -1;
+
+  ASTContext &Ctx = cxcursor::getCursorContext(C);
+  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(RD);
+  return Layout.getAlignment().getQuantity();
+}
+
+long long clang_getRecordFieldOffset(CXCursor C) {
+  if (!clang_isDeclaration(C.kind))
+    return -1;
+  const Decl *D = cxcursor::getCursorDecl(C);
+  const FieldDecl *FD = dyn_cast<FieldDecl>(D);
+  if (!FD)
+    return -1;
+
+  ASTContext &Ctx = cxcursor::getCursorContext(C);
+  unsigned FieldNo = FD->getFieldIndex();
+  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(FD->getParent());
+  return Layout.getFieldOffset(FieldNo);
+}
+
+long long clang_getRecordSize(CXType T) {
+  CXCursor C = clang_getTypeDeclaration(T);
+  if (!clang_isDeclaration(C.kind))
+    return -1;
+  const Decl *D = cxcursor::getCursorDecl(C);
+  const RecordDecl *RD = dyn_cast<RecordDecl>(D);
+  if (!RD)
+    return -1;
+
+  ASTContext &Ctx = cxcursor::getCursorContext(C);
+  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(RD);
+  return Layout.getSize().getQuantity();
+}
+
 CXString clang_getDeclObjCTypeEncoding(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
     return cxstring::createEmpty();
@@ -661,48 +703,6 @@ CXString clang_getDeclObjCTypeEncoding(CXCursor C) {
   }
 
   return cxstring::createDup(encoding);
-}
-
-long long clang_getRecordSize(CXType T) {
-  CXCursor C = clang_getTypeDeclaration(T);
-  if (!clang_isDeclaration(C.kind))
-    return -1;
-  const Decl *D = cxcursor::getCursorDecl(C);
-  const RecordDecl *RD = dyn_cast<RecordDecl>(D);
-  if (!RD)
-    return -1;
-
-  ASTContext &Ctx = cxcursor::getCursorContext(C);
-  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(RD);
-  return Layout.getSize().getQuantity();
-}
-
-long long clang_getRecordAlignment(CXType T) {
-  CXCursor C = clang_getTypeDeclaration(T);
-  if (!clang_isDeclaration(C.kind))
-    return -1;
-  const Decl *D = cxcursor::getCursorDecl(C);
-  const RecordDecl *RD = dyn_cast<RecordDecl>(D);
-  if (!RD)
-    return -1;
-
-  ASTContext &Ctx = cxcursor::getCursorContext(C);
-  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(RD);
-  return Layout.getAlignment().getQuantity(); 
-}
-
-long long clang_getRecordFieldOffset(CXCursor C) {
-  if (!clang_isDeclaration(C.kind))
-    return -1;
-  const Decl *D = cxcursor::getCursorDecl(C);
-  const FieldDecl *F = dyn_cast<FieldDecl>(D);
-  if (!F)
-    return -1;
-
-  ASTContext &Ctx = cxcursor::getCursorContext(C);
-  unsigned FieldNo = F->getFieldIndex();
-  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(F->getParent());
-  return Layout.getFieldOffset(FieldNo); 
 }
 
 } // end: extern "C"

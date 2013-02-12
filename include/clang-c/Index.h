@@ -2891,9 +2891,9 @@ CINDEX_LINKAGE CXType clang_getArrayElementType(CXType T);
 CINDEX_LINKAGE long long clang_getArraySize(CXType T);
 
 /**
- * \brief Return the alignment value for a record, in bytes.
+ * \brief Return the alignment of a record (struct, union or class), in bytes.
  *
- * If the cursor is not a record declaration, -1 is returned.
+ * If the type is not a record, -1 is returned.
  */
 CINDEX_LINKAGE long long clang_getRecordAlignment(CXType T);
 
@@ -2907,7 +2907,7 @@ CINDEX_LINKAGE long long clang_getRecordFieldOffset(CXCursor C);
 /**
  * \brief Return the size of a record in bytes.
  *
- * If the cursor is not a record declaration, -1 is returned.
+ * If the type is not a record, -1 is returned.
  */
 CINDEX_LINKAGE long long clang_getRecordSize(CXType T);
 
