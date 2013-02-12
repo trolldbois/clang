@@ -6,15 +6,7 @@ int *f(int *p, char *x, FooType z) {
 }
 typedef double OtherType;
 typedef int ArrayType[5];
-struct s{
-  int a;
-  char b;
-  long long c;
-};
-union u{
-  int u1;
-  long long u2;
-};
+
 // RUN: c-index-test -test-print-typekind %s | FileCheck %s
 // CHECK: TypedefDecl=FooType:1:13 (Definition) typekind=Typedef [canonical=Int] [isPOD=1]
 // CHECK: VarDecl=p:2:6 typekind=Pointer [isPOD=1]
