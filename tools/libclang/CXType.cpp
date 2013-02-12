@@ -663,7 +663,8 @@ CXString clang_getDeclObjCTypeEncoding(CXCursor C) {
   return cxstring::createDup(encoding);
 }
 
-long long clang_getRecordSize(CXCursor C) {
+long long clang_getRecordSize(CXType T) {
+  CXCursor C = clang_getTypeDeclaration(T);
   if (!clang_isDeclaration(C.kind))
     return -1;
   const Decl *D = cxcursor::getCursorDecl(C);
@@ -676,7 +677,8 @@ long long clang_getRecordSize(CXCursor C) {
   return Layout.getSize().getQuantity();
 }
 
-long long clang_getRecordAlignment(CXCursor C) {
+long long clang_getRecordAlignment(CXType T) {
+  CXCursor C = clang_getTypeDeclaration(T);
   if (!clang_isDeclaration(C.kind))
     return -1;
   const Decl *D = cxcursor::getCursorDecl(C);

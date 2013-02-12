@@ -2895,7 +2895,7 @@ CINDEX_LINKAGE long long clang_getArraySize(CXType T);
  *
  * If the cursor is not a record declaration, -1 is returned.
  */
-CINDEX_LINKAGE long long clang_getRecordAlignment(CXCursor C);
+CINDEX_LINKAGE long long clang_getRecordAlignment(CXType T);
 
 /**
  * \brief Return the offset of a field in a record in bits.
@@ -2909,7 +2909,7 @@ CINDEX_LINKAGE long long clang_getRecordFieldOffset(CXCursor C);
  *
  * If the cursor is not a record declaration, -1 is returned.
  */
-CINDEX_LINKAGE long long clang_getRecordSize(CXCursor C);
+CINDEX_LINKAGE long long clang_getRecordSize(CXType T);
 
 /**
  * \brief Returns 1 if the base class specified by the cursor with kind
