@@ -35,7 +35,7 @@ def test_a_struct():
     assert all(x.kind == CursorKind.FIELD_DECL for x in fields)
     assert all(x.translation_unit is not None for x in fields)
     
-    align = teststruct.get_record_alignment()
+    align = teststruct.type.get_record_alignment()
     assert align == ctypes.sizeof(ctypes.c_long)
 
     assert fields[0].spelling == 'a'
@@ -92,7 +92,7 @@ def test_a_struct():
         3*ctypes.sizeof(ctypes.c_long)+ctypes.sizeof(ctypes.POINTER(ctypes.c_int)) )
     
     s = fields[7].get_record_field_offset()/8+ctypes.sizeof(ctypes.POINTER(ctypes.c_int))
-    assert conf.lib.clang_getRecordSize(teststruct) == s+s%align 
+    assert teststruct.type.get_record_size() == s+s%align 
 
 def test_references():
     """Ensure that a Type maintains a reference to a TranslationUnit."""

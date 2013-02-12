@@ -1314,29 +1314,11 @@ class Cursor(Structure):
         """
         return TokenGroup.get_tokens(self._tu, self.extent)
 
-    def get_record_alignment(self):
-        """
-        Retrieve the alignment of the record.
-        """
-        if not hasattr(self, '_record_align'):
-            self._record_align = conf.lib.clang_getRecordAlignment(self)
-        return self._record_align
-
     def get_record_field_offset(self):
         """
         Retrieve the offset of a field in his record, in number of bits.
         """
-        if not hasattr(self, '_record_field_offset'):
-            self._record_field_offset = conf.lib.clang_getRecordFieldOffset(self)
-        return self._record_field_offset
-
-    def get_record_size(self):
-        """
-        Retrieve the size of the record.
-        """
-        if not hasattr(self, '_record_size'):
-            self._record_size = conf.lib.clang_getRecordSize(self)
-        return self._record_size
+        return conf.lib.clang_getRecordFieldOffset(self)
 
     @staticmethod
     def from_result(res, fn, args):
@@ -1636,6 +1618,18 @@ class Type(Structure):
         Retrieve the size of the constant array.
         """
         return conf.lib.clang_getArraySize(self)
+
+    def get_record_alignment(self):
+        """
+        Retrieve the alignment of the record.
+        """
+        return conf.lib.clang_getRecordAlignment(self)
+
+    def get_record_size(self):
+        """
+        Retrieve the size of the record.
+        """
+        return conf.lib.clang_getRecordSize(self)
 
     def __eq__(self, other):
         if type(other) != type(self):
@@ -2909,7 +2903,7 @@ functionList = [
    Type.from_result),
 
   ("clang_getRecordAlignment",
-   [Cursor],
+   [Type],
    c_longlong),
 
   ("clang_getRecordFieldOffset",
@@ -2917,7 +2911,7 @@ functionList = [
    c_longlong),
 
   ("clang_getRecordSize",
-   [Cursor],
+   [Type],
    c_ulonglong),
 
   ("clang_getSpecializedCursorTemplate",
