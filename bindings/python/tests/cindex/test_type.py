@@ -26,8 +26,8 @@ struct teststruct {
 """
 
 def test_a_struct():
-    import ctypes    
-    tu = get_tu(kInput)
+    import ctypes
+    tu = get_tu(kInput)#, args=['-m32'])
 
     teststruct = get_cursor(tu, 'teststruct')
     assert teststruct is not None, "Could not find teststruct."
@@ -36,7 +36,11 @@ def test_a_struct():
     assert all(x.translation_unit is not None for x in fields)
     
     align = teststruct.type.get_record_alignment()
-    assert align == ctypes.sizeof(ctypes.c_long)
+    print 'align', align
+    assert align == #ctypes.sizeof(ctypes.c_long)
+
+    for i in range(8):
+        print i, fields[i].get_record_field_offset(), fields[i].get_record_field_offset()/8.0
 
     assert fields[0].spelling == 'a'
     assert not fields[0].type.is_const_qualified()
@@ -88,11 +92,11 @@ def test_a_struct():
     assert fields[7].type.get_pointee().kind == TypeKind.POINTER
     assert fields[7].type.get_pointee().get_pointee().kind == TypeKind.POINTER
     assert fields[7].type.get_pointee().get_pointee().get_pointee().kind == TypeKind.INT
-    assert fields[7].get_record_field_offset() == 8*(4+3*ctypes.sizeof(ctypes.c_int)+ 
+    assert fields[7].get_record_field_offset() == 8*(4+3*ctypes.sizeof(ctypes.c_int)+
         3*ctypes.sizeof(ctypes.c_long)+ctypes.sizeof(ctypes.POINTER(ctypes.c_int)) )
     
     s = fields[7].get_record_field_offset()/8+ctypes.sizeof(ctypes.POINTER(ctypes.c_int))
-    assert teststruct.type.get_record_size() == s+s%align 
+    assert teststruct.type.get_record_size() == s+s%align
 
 def test_references():
     """Ensure that a Type maintains a reference to a TranslationUnit."""
