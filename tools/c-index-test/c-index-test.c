@@ -1134,23 +1134,23 @@ static enum CXChildVisitResult PrintTypeKind(CXCursor cursor, CXCursor p,
     }
     /* Print the record size if applicable. */
     {
-      long long size = clang_getRecordSize(T);
-      if (size != -1) {
-        printf(" [size=%lld]", size);
+      long long Size = clang_getRecordSize(T);
+      if (Size != -1) {
+        printf(" [size=%lld]", Size);
       }
     }
     /* Print the record alignement if applicable. */
     {
-      long long align = clang_getRecordAlignment(T);
-      if (align != -1) {
-        printf(" [alignment=%lld]", align);
+      long long Align = clang_getRecordAlignment(T);
+      if (Align != -1) {
+        printf(" [alignment=%lld]", Align);
       }
     }
     /* Print the record field offset if applicable. */
     {
-      long long offset = clang_getRecordFieldOffset(cursor);
-      if (offset != -1) {
-        printf(" [offset=%lld]", offset);
+      long long Offset = clang_getRecordFieldOffset(cursor);
+      if (Offset != -1) {
+        printf(" [offset=%lld]", Offset);
       }
     }
     /* Print if this is a non-POD type. */
