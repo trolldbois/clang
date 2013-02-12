@@ -1,4 +1,3 @@
-// from SemaCXX/class-layout.cpp
 #define SA(n, p) int a##n[(p) ? 1 : -1]
 
 struct A {
@@ -58,13 +57,13 @@ SA(6_1, sizeof(I) == 5);
 namespace PR5580 {
 
 class A { bool iv0 : 1; };
-SA(7, sizeof(A) == 1);  
+SA(7, sizeof(A) == 1);
 
 class B : A { bool iv0 : 1; };
 SA(8, sizeof(B) == 2);
 
 struct C { bool iv0 : 1; };
-SA(9, sizeof(C) == 1);  
+SA(9, sizeof(C) == 1);
 
 struct D : C { bool iv0 : 1; };
 SA(10, sizeof(D) == 2);
@@ -102,6 +101,7 @@ struct H { G g; };
 
 }
 
+// from SemaCXX/class-layout.cpp
 // RUN: c-index-test -test-print-typekind %s -m64 | FileCheck -check-prefix=CHECK64 %s
 // CHECK64: StructDecl=A:3:8 (Definition) typekind=Record [size=8] [alignment=4] [isPOD=1]
 // CHECK64: StructDecl=B:10:8 (Definition) typekind=Record [size=12] [alignment=4] [isPOD=0]
