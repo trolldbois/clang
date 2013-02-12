@@ -36,11 +36,11 @@ def test_a_struct():
     assert all(x.translation_unit is not None for x in fields)
     
     align = teststruct.type.get_record_alignment()
-    print 'align', align
-    assert align == #ctypes.sizeof(ctypes.c_long)
+    #print 'align', align
+    assert align == ctypes.sizeof(ctypes.c_long) #Wrong if you change the triple for diff arch.
 
-    for i in range(8):
-        print i, fields[i].get_record_field_offset(), fields[i].get_record_field_offset()/8.0
+    #for i in range(8):
+    #    print i, fields[i].get_record_field_offset(), fields[i].get_record_field_offset()/8.0
 
     assert fields[0].spelling == 'a'
     assert not fields[0].type.is_const_qualified()
