@@ -320,3 +320,13 @@ struct dalign {
     double a4;
 };
 
+// CHECK1: StructDecl=salign:[[@LINE+4]]:8 (Definition) typekind=Record [size=96] [alignment=32] [isPOD=1]
+// CHECK2: StructDecl=salign:[[@LINE+3]]:8 (Definition) typekind=Record [size=128] [alignment=64] [isPOD=1]
+// CHECK3: StructDecl=salign:[[@LINE+2]]:8 (Definition) typekind=Record [size=96] [alignment=32] [isPOD=1]
+// CHECK4: StructDecl=salign:[[@LINE+1]]:8 (Definition) typekind=Record [size=64] [alignment=16] [isPOD=1]
+struct salign {
+    short b1;    
+    int b2;    
+    long b3;    
+};
+
