@@ -285,5 +285,38 @@ struct DV : BV {};
 // CHECK32: StructDecl=EV:[[@LINE+1]]:8 (Definition) typekind=Record [size=64] [alignment=32] [isPOD=0]
 struct EV : CV, DV {};
 
-
 }
+
+
+// RUN: c-index-test -test-print-typekind %s -target i386-linux-gnu | FileCheck -check-prefix=CHECK1 %s
+// RUN: c-index-test -test-print-typekind %s -target nvptx64-unknown-unknown | FileCheck -check-prefix=CHECK2 %s
+// RUN: c-index-test -test-print-typekind %s -target i386-pc-win32 | FileCheck -check-prefix=CHECK3 %s
+// RUN: c-index-test -test-print-typekind %s -target msp430-none-none | FileCheck -check-prefix=CHECK4 %s
+
+// CHECK1: StructDecl=dalign:[[@LINE+4]]:8 (Definition) typekind=Record [size=128] [alignment=32] [isPOD=1]
+// CHECK2: StructDecl=dalign:[[@LINE+3]]:8 (Definition) typekind=Record [size=192] [alignment=64] [isPOD=1]
+// CHECK3: StructDecl=dalign:[[@LINE+2]]:8 (Definition) typekind=Record [size=128] [alignment=64] [isPOD=1]
+// CHECK4: StructDecl=dalign:[[@LINE+1]]:8 (Definition) typekind=Record [size=128] [alignment=64] [isPOD=1]
+struct dalign {
+// CHECK1: FieldDecl=a1:[[@LINE+4]]:10 (Definition) typekind=Long [offset=0] [isPOD=1]
+// CHECK2: FieldDecl=a1:[[@LINE+3]]:10 (Definition) typekind=Long [offset=0] [isPOD=1]
+// CHECK3: FieldDecl=a1:[[@LINE+2]]:10 (Definition) typekind=Long [offset=0] [isPOD=1]
+// CHECK4: FieldDecl=a1:[[@LINE+1]]:10 (Definition) typekind=Long [offset=0] [isPOD=1]
+    long a1;
+// CHECK1: FieldDecl=a2:[[@LINE+4]]:10 (Definition) typekind=Long [offset=32] [isPOD=1]
+// CHECK2: FieldDecl=a2:[[@LINE+3]]:10 (Definition) typekind=Long [offset=64] [isPOD=1]
+// CHECK3: FieldDecl=a2:[[@LINE+2]]:10 (Definition) typekind=Long [offset=32] [isPOD=1]
+// CHECK4: FieldDecl=a2:[[@LINE+1]]:10 (Definition) typekind=Long [offset=32] [isPOD=1]
+    long a2:3;
+// CHECK1: FieldDecl=a3:[[@LINE+4]]:10 (Definition) typekind=Long [offset=35] [isPOD=1]
+// CHECK2: FieldDecl=a3:[[@LINE+3]]:10 (Definition) typekind=Long [offset=67] [isPOD=1]
+// CHECK3: FieldDecl=a3:[[@LINE+2]]:10 (Definition) typekind=Long [offset=35] [isPOD=1]
+// CHECK4: FieldDecl=a3:[[@LINE+1]]:10 (Definition) typekind=Long [offset=35] [isPOD=1]
+    long a3:4;
+// CHECK1: FieldDecl=a4:[[@LINE+4]]:12 (Definition) typekind=Double [offset=64] [isPOD=1]
+// CHECK2: FieldDecl=a4:[[@LINE+3]]:12 (Definition) typekind=Double [offset=128] [isPOD=1]
+// CHECK3: FieldDecl=a4:[[@LINE+2]]:12 (Definition) typekind=Double [offset=64] [isPOD=1]
+// CHECK4: FieldDecl=a4:[[@LINE+1]]:12 (Definition) typekind=Double [offset=64] [isPOD=1]
+    double a4;
+};
+
