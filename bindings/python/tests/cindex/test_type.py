@@ -312,7 +312,7 @@ struct a {
 """
     # try long == uint32_t
     tries=[(['-target','i386-linux-gnu'],(32,128,0,32,35,64)),(['-target','nvptx64-unknown-unknown'],(64,192,0,64,67,128)),
-            (['-target','i386-pc-win32'],(64,128,0,32,35,64)), (['-target','msp430-none-none'],(16,112,0,32,35,64))]
+            (['-target','i386-pc-win32'],(64,128,0,32,35,64)), (['-target','msp430-none-none'],(16,112,0,32,35,48))]
     for flags, values in tries:
         align,total,a1,a2,a3,a4 = values
 
@@ -320,14 +320,11 @@ struct a {
         teststruct = get_cursor(tu, 'a')
         fields = list(teststruct.get_children())
 
-        print flags
-        print values
-        print teststruct.type.get_align(),teststruct.type.get_size(), [fields[i].get_record_field_offset() for i in range(len(fields))]
         assert teststruct.type.get_align() == align
         assert teststruct.type.get_size() == total
         assert fields[0].get_record_field_offset() == a1
         assert fields[1].get_record_field_offset() == a2
         assert fields[2].get_record_field_offset() == a3
-#        assert fields[3].get_record_field_offset() == a4
+        assert fields[3].get_record_field_offset() == a4
 
 
