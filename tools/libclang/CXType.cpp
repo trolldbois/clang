@@ -635,18 +635,15 @@ long long clang_getArraySize(CXType CT) {
   return result;
 }
 
-long long clang_getRecordAlignment(CXType T) {
+long long clang_getTypeAlign(CXType T) {
   CXCursor C = clang_getTypeDeclaration(T);
   if (!clang_isDeclaration(C.kind))
     return -1;
-  const Decl *D = cxcursor::getCursorDecl(C);
-  const RecordDecl *RD = dyn_cast<RecordDecl>(D);
-  if (!RD)
-    return -1;
-
   ASTContext &Ctx = cxcursor::getCursorContext(C);
-  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(RD);
-  return Layout.getAlignment().getQuantity();
+  QualType QT = GetQualType(T);
+  if (QT->isIncompleteType()) 
+    return -1;
+  return Ctx.getTypeAlign(QT);
 }
 
 long long clang_getRecordFieldOffset(CXCursor C) {
@@ -663,18 +660,15 @@ long long clang_getRecordFieldOffset(CXCursor C) {
   return Layout.getFieldOffset(FieldNo);
 }
 
-long long clang_getRecordSize(CXType T) {
+long long clang_getTypeSize(CXType T) {
   CXCursor C = clang_getTypeDeclaration(T);
   if (!clang_isDeclaration(C.kind))
     return -1;
-  const Decl *D = cxcursor::getCursorDecl(C);
-  const RecordDecl *RD = dyn_cast<RecordDecl>(D);
-  if (!RD)
-    return -1;
-
   ASTContext &Ctx = cxcursor::getCursorContext(C);
-  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(RD);
-  return Layout.getSize().getQuantity();
+  QualType QT = GetQualType(T);
+  if (QT->isIncompleteType()) 
+    return -1;
+ return Ctx.getTypeSize(QT);
 }
 
 CXString clang_getDeclObjCTypeEncoding(CXCursor C) {

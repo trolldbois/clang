@@ -1134,14 +1134,14 @@ static enum CXChildVisitResult PrintTypeKind(CXCursor cursor, CXCursor p,
     }
     /* Print the record size if applicable. */
     {
-      long long Size = clang_getRecordSize(T);
+      long long Size = clang_getTypeSize(T);
       if (Size != -1) {
         printf(" [size=%lld]", Size);
       }
     }
     /* Print the record alignement if applicable. */
     {
-      long long Align = clang_getRecordAlignment(T);
+      long long Align = clang_getTypeAlign(T);
       if (Align != -1) {
         printf(" [alignment=%lld]", Align);
       }

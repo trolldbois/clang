@@ -190,9 +190,7 @@ clang_getPresumedLocation
 clang_getRange
 clang_getRangeEnd
 clang_getRangeStart
-clang_getRecordAlignment
 clang_getRecordFieldOffset
-clang_getRecordSize
 clang_getRemappings
 clang_getRemappingsFromFileList
 clang_getResultType
@@ -206,8 +204,10 @@ clang_getTokenLocation
 clang_getTokenSpelling
 clang_getTranslationUnitCursor
 clang_getTranslationUnitSpelling
+clang_getTypeAlign
 clang_getTypeDeclaration
 clang_getTypeKindSpelling
+clang_getTypeSize
 clang_getTypedefDeclUnderlyingType
 clang_hashCursor
 clang_indexLoc_getCXSourceLocation
