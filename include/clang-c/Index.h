@@ -2901,6 +2901,7 @@ CINDEX_LINKAGE long long clang_getTypeAlign(CXType T);
  * \brief Return the offset of a field in a record in bits.
  *
  * If the cursor is not a record field declaration, -1 is returned.
+ * If the field type declaration is incomplete, -1 is returned.
  */
 CINDEX_LINKAGE long long clang_getRecordFieldOffset(CXCursor C);
 
