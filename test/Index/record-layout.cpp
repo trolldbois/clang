@@ -198,6 +198,8 @@ struct BaseStruct
     double v0;
     float v1;
     C fg;
+    C &rg;
+    int x;
 };
 
 struct DerivedStruct : public BaseStruct { int x; };
