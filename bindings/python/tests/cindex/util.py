@@ -15,7 +15,6 @@ def get_tu(source, lang='c', all_warnings=False, args=[]):
     all_warnings is a convenience argument to enable all compiler warnings.
     """
     name = 't.c'
-    #args = []
     if lang == 'cpp':
         name = 't.cpp'
         args.append('-std=c++11')

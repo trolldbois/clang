@@ -1619,17 +1619,17 @@ class Type(Structure):
         """
         return conf.lib.clang_getArraySize(self)
 
-    def get_record_alignment(self):
+    def get_align(self):
         """
         Retrieve the alignment of the record.
         """
-        return conf.lib.clang_getRecordAlignment(self)
+        return conf.lib.clang_getTypeAlign(self)
 
-    def get_record_size(self):
+    def get_size(self):
         """
         Retrieve the size of the record.
         """
-        return conf.lib.clang_getRecordSize(self)
+        return conf.lib.clang_getTypeSize(self)
 
     def __eq__(self, other):
         if type(other) != type(self):
@@ -2902,15 +2902,15 @@ functionList = [
    Type,
    Type.from_result),
 
-  ("clang_getRecordAlignment",
-   [Type],
-   c_longlong),
-
   ("clang_getRecordFieldOffset",
    [Cursor],
    c_longlong),
 
-  ("clang_getRecordSize",
+  ("clang_getTypeAlign",
+   [Type],
+   c_longlong),
+
+  ("clang_getTypeSize",
    [Type],
    c_ulonglong),
 
