@@ -643,7 +643,7 @@ long long clang_getTypeAlign(CXType T) {
     case CXType_Invalid:
       return -1;
     case CXType_Void:
-      return 1;
+      return 8;
     default:
       break;
   }
@@ -678,7 +678,7 @@ long long clang_getTypeSize(CXType T) {
       return -1;
     case CXType_FunctionProto:
     case CXType_Void:
-      return 1;
+      return 8;
     default:
       break;
   }

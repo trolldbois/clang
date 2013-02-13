@@ -1143,7 +1143,7 @@ static enum CXChildVisitResult PrintTypeKind(CXCursor cursor, CXCursor p,
     {
       long long Align = clang_getTypeAlign(T);
       if (Align != -1) {
-        printf(" [alignment=%lld]", Align);
+        printf(" [align=%lld]", Align);
       }
     }
     /* Print the record field offset if applicable. */
