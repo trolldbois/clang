@@ -307,27 +307,27 @@ struct a {
     long a1;
     long a2:3;
     long a3:4;
+    long long a4;
 };
 """
     # try long == uint32_t
-    tries=[(['-target','i386-linux-gnu'],4),(['-target','nvptx64-unknown-unknown'],8)]
-    for flags, bytes in tries:
-        tu = get_tu(source, flags=flags)
+    tries=[(['-target','i386-linux-gnu'],(32,128,0,32,35,64)),(['-target','nvptx64-unknown-unknown'],(64,192,0,64,67,128)),
+            (['-target','i386-pc-win32'],(64,128,0,32,35,64)), (['-target','msp430-none-none'],(16,112,0,32,35,64))]
+    for flags, values in tries:
+        align,total,a1,a2,a3,a4 = values
 
+        tu = get_tu(source, flags=flags)
         teststruct = get_cursor(tu, 'a')
         fields = list(teststruct.get_children())
 
-        align = teststruct.type.get_align()
-        assert align == bytes*8
-        size = teststruct.type.get_size()
-        assert size == 2*bytes*8
+        print flags
+        print values
+        print teststruct.type.get_align(),teststruct.type.get_size(), [fields[i].get_record_field_offset() for i in range(len(fields))]
+        assert teststruct.type.get_align() == align
+        assert teststruct.type.get_size() == total
+        assert fields[0].get_record_field_offset() == a1
+        assert fields[1].get_record_field_offset() == a2
+        assert fields[2].get_record_field_offset() == a3
+#        assert fields[3].get_record_field_offset() == a4
 
-        assert fields[0].spelling == 'a1'
-        assert fields[0].get_record_field_offset() == 0
-
-        assert fields[1].spelling == 'a2'
-        assert fields[1].get_record_field_offset() == bytes*8
-    
-        assert fields[2].spelling == 'a3'
-        assert fields[2].get_record_field_offset() == bytes*8+3
 
