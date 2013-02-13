@@ -653,7 +653,9 @@ long long clang_getRecordFieldOffset(CXCursor C) {
   const FieldDecl *FD = dyn_cast<FieldDecl>(D);
   if (!FD)
     return -1;
-
+  QualType QT = GetQualType(clang_getCursorType(C));
+  if (QT->isIncompleteType()) 
+    return -1;
   ASTContext &Ctx = cxcursor::getCursorContext(C);
   unsigned FieldNo = FD->getFieldIndex();
   const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(FD->getParent());
