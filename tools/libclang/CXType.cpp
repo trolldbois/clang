@@ -23,6 +23,7 @@
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/Type.h"
 #include "clang/Frontend/ASTUnit.h"
+#include "clang/Sema/SemaDiagnostic.h"
 
 using namespace clang;
 
@@ -636,10 +637,17 @@ long long clang_getArraySize(CXType CT) {
 }
 
 long long clang_getTypeAlign(CXType T) {
-  CXCursor C = clang_getTypeDeclaration(T);
-  if (!clang_isDeclaration(C.kind))
-    return -1;
-  ASTContext &Ctx = cxcursor::getCursorContext(C);
+  CXTranslationUnit TU = GetTU(T);
+  ASTContext &Ctx = cxtu::getASTUnit(TU)->getASTContext();
+  switch (T.kind) {
+    case CXType_Invalid:
+      return -1;
+    case CXType_Void:
+      return 1;
+    default:
+      break;
+  }
+  
   QualType QT = GetQualType(T);
   if (QT->isIncompleteType()) 
     return -1;
@@ -663,13 +671,27 @@ long long clang_getRecordFieldOffset(CXCursor C) {
 }
 
 long long clang_getTypeSize(CXType T) {
-  CXCursor C = clang_getTypeDeclaration(T);
-  if (!clang_isDeclaration(C.kind))
-    return -1;
-  ASTContext &Ctx = cxcursor::getCursorContext(C);
+  CXTranslationUnit TU = GetTU(T);
+  ASTContext &Ctx = cxtu::getASTUnit(TU)->getASTContext();
+  switch (T.kind) {
+    case CXType_Invalid:
+      return -1;
+    case CXType_FunctionProto:
+    case CXType_Void:
+      return 1;
+    default:
+      break;
+  }
+
   QualType QT = GetQualType(T);
-  if (QT->isIncompleteType()) 
-    return -1;
+  if (QT->isIncompleteType()) {
+    const Decl *D = cxcursor::getCursorDecl(clang_getTypeDeclaration(T));
+    bool ret = cxtu::getASTUnit(TU)->getSema().RequireCompleteType(D->getLocation(), QT,
+                            diag::err_typecheck_decl_incomplete_type);
+    if (ret)
+      return -1;
+  }
+
  return Ctx.getTypeSize(QT);
 }
 
