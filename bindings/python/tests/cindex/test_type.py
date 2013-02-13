@@ -300,8 +300,7 @@ def test_is_restrict_qualified():
     assert not j.type.is_restrict_qualified()
 
 def test_record_layout():
-    """Ensure Cursor.type.get_size, Cursor.type.get_align and
-    Cursor.get_record_field_offset works."""
+    """Ensure Cursor.type.get_size, Cursor.type.get_align and Cursor.get_record_field_offset works."""
 
     source ="""
 struct a {
@@ -311,17 +310,17 @@ struct a {
 };
 """
     # try long == uint32_t
-    tries=[('-target i386-linux-gnu',4),('-target i686-pc-linux-gnu',8)]
-    for flag, bytes in tries:
-        tu = get_tu(source, args=[flag])
+    tries=[(['-target','i386-linux-gnu'],4),(['-target','nvptx64-unknown-unknown'],8)]
+    for flags, bytes in tries:
+        tu = get_tu(source, flags=flags)
 
         teststruct = get_cursor(tu, 'a')
         fields = list(teststruct.get_children())
 
         align = teststruct.type.get_align()
-        assert align == bytes
+        assert align == bytes*8
         size = teststruct.type.get_size()
-        assert size == 2*bytes
+        assert size == 2*bytes*8
 
         assert fields[0].spelling == 'a1'
         assert fields[0].get_record_field_offset() == 0

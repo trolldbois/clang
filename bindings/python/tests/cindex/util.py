@@ -3,7 +3,7 @@
 from clang.cindex import Cursor
 from clang.cindex import TranslationUnit
 
-def get_tu(source, lang='c', all_warnings=False, args=[]):
+def get_tu(source, lang='c', all_warnings=False, flags=[]):
     """Obtain a translation unit from source and language.
 
     By default, the translation unit is created from source file "t.<ext>"
@@ -14,6 +14,7 @@ def get_tu(source, lang='c', all_warnings=False, args=[]):
 
     all_warnings is a convenience argument to enable all compiler warnings.
     """
+    args = list(flags)
     name = 't.c'
     if lang == 'cpp':
         name = 't.cpp'
