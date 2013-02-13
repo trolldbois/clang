@@ -353,6 +353,12 @@ TEST_F(FormatTest, FormatsSwitchStatement) {
                "}");
   verifyFormat("switch (test)\n"
                "  ;");
+  
+  // FIXME: Improve formatting of case labels in macros.
+  verifyFormat("#define SOMECASES  \\\n"
+               "case 1:            \\\n"
+               "  case 2\n", getLLVMStyleWithColumns(20));
+
   verifyGoogleFormat("switch (x) {\n"
                      "  case 1:\n"
                      "    f();\n"
@@ -1615,6 +1621,14 @@ TEST_F(FormatTest, UnderstandsUsesOfStarAndAmp) {
   verifyIndependentOfContext("a * (a + b);");
   verifyIndependentOfContext("(a *)(a + b);");
   verifyIndependentOfContext("int *pa = (int *)&a;");
+  verifyIndependentOfContext("return sizeof(int **);");
+  verifyIndependentOfContext("return sizeof(int ******);");
+  verifyIndependentOfContext("return (int **&)a;");
+  verifyGoogleFormat("return sizeof(int**);");
+  verifyIndependentOfContext("Type **A = static_cast<Type **>(P);");
+  verifyGoogleFormat("Type** A = static_cast<Type**>(P);");
+  // FIXME: The newline is wrong.
+  verifyFormat("auto a = [](int **&, int ***) {}\n;");
 
   verifyIndependentOfContext("InvalidRegions[*R] = 0;");
 
@@ -2540,8 +2554,7 @@ TEST_F(FormatTest, ObjCSnippets) {
   verifyFormat("@dynamic textColor;");
   verifyFormat("char *buf1 = @encode(int *);");
   verifyFormat("char *buf1 = @encode(typeof(4 * 5));");
-  // FIXME: Enable once PR14884 is fixed:
-  //verifyFormat("char *buf1 = @encode(int **);");
+  verifyFormat("char *buf1 = @encode(int **);");
   verifyFormat("Protocol *proto = @protocol(p1);");
   verifyFormat("SEL s = @selector(foo:);");
   verifyFormat("@synchronized(self) {\n"
@@ -2653,6 +2666,9 @@ TEST_F(FormatTest, ReformatRegionAdjustsIndent) {
             "  }", format("  {\n"
                           "a;\n"
                           "  }", 4, 2, getLLVMStyle()));
+  EXPECT_EQ("void f() {}\n"
+            "void g() {}", format("void f() {}\n"
+                                  "void g() {}", 13, 0, getLLVMStyle()));
 }
 
 } // end namespace tooling

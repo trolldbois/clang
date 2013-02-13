@@ -161,9 +161,11 @@ void t17() {
   __asm _emit 0x4A
   __asm _emit 0x43
   __asm _emit 0x4B
+  __asm _EMIT 0x4B
 // CHECK: t17
 // CHECK:  call void asm sideeffect inteldialect ".byte 0x4A", "~{dirflag},~{fpsr},~{flags}"() nounwind
 // CHECK:  call void asm sideeffect inteldialect ".byte 0x43", "~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK:  call void asm sideeffect inteldialect ".byte 0x4B", "~{dirflag},~{fpsr},~{flags}"() nounwind
 // CHECK:  call void asm sideeffect inteldialect ".byte 0x4B", "~{dirflag},~{fpsr},~{flags}"() nounwind
 }
 
@@ -273,4 +275,52 @@ void t24() {
   __asm call t24_helper
 // CHECK: t24
 // CHECK: call void asm sideeffect inteldialect "call $0", "r,~{dirflag},~{fpsr},~{flags}"(void ()* @t24_helper) nounwind
+}
+
+void t25() {
+  __asm mov eax, 0ffffffffh
+  __asm mov eax, 0fh
+  __asm mov eax, 0a2h
+  __asm mov eax, 0xa2h
+  __asm mov eax, 0xa2
+// CHECK: t25
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$0ffffffffh", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$0fh", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$0a2h", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$0xa2h", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$0xa2", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+}
+
+void t26() {
+  __asm pushad
+  __asm mov eax, 0
+  __asm __emit 0fh
+  __asm __emit 0a2h
+  __asm __EMIT 0a2h
+  __asm popad
+// CHECK: t26
+// CHECK: call void asm sideeffect inteldialect "pushad", "~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect "mov eax, $$0", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect ".byte 0fh", "~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect ".byte 0a2h", "~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect ".byte 0a2h", "~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect "popad", "~{dirflag},~{fpsr},~{flags}"() nounwind
+}
+
+void t27() {
+  __asm mov eax, fs:[0h]
+// CHECK: t27
+// CHECK: call void asm sideeffect inteldialect "mov eax, fs:[0h]", "~{eax},~{dirflag},~{fpsr},~{flags}"() nounwind
+}
+
+void t28() {
+  __asm align 8
+  __asm align 16;
+  __asm align 128;
+  __asm ALIGN 256;
+// CHECK: t28
+// CHECK: call void asm sideeffect inteldialect ".align 3", "~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect ".align 4", "~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect ".align 7", "~{dirflag},~{fpsr},~{flags}"() nounwind
+// CHECK: call void asm sideeffect inteldialect ".align 8", "~{dirflag},~{fpsr},~{flags}"() nounwind
 }
