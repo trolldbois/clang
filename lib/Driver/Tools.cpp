@@ -1914,8 +1914,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // Note that these flags are trump-cards. Regardless of the order w.r.t. the
   // PIC or PIE options above, if these show up, PIC is disabled.
   llvm::Triple Triple(TripleStr);
-  if ((Args.hasArg(options::OPT_mkernel) ||
-       Args.hasArg(options::OPT_fapple_kext)) &&
+  if (KernelOrKext &&
       (Triple.getOS() != llvm::Triple::IOS ||
        Triple.isOSVersionLT(6)))
     PIC = PIE = false;
@@ -2561,7 +2560,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                    options::OPT_fno_sanitize_undefined_trap_on_error, false))
     CmdArgs.push_back("-fsanitize-undefined-trap-on-error");
 
-  // Report and error for -faltivec on anything other then PowerPC.
+  // Report and error for -faltivec on anything other than PowerPC.
   if (const Arg *A = Args.getLastArg(options::OPT_faltivec))
     if (!(getToolChain().getTriple().getArch() == llvm::Triple::ppc ||
           getToolChain().getTriple().getArch() == llvm::Triple::ppc64))
@@ -2821,7 +2820,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
 
-  // -fborland-extensions=0 is default.
+  // -fno-borland-extensions is default.
   if (Args.hasFlag(options::OPT_fborland_extensions,
                    options::OPT_fno_borland_extensions, false))
     CmdArgs.push_back("-fborland-extensions");
@@ -2975,8 +2974,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-fpack-struct=1");
   }
 
-  if (Args.hasArg(options::OPT_mkernel) ||
-      Args.hasArg(options::OPT_fapple_kext)) {
+  if (KernelOrKext) {
     if (!Args.hasArg(options::OPT_fcommon))
       CmdArgs.push_back("-fno-common");
     Args.ClaimAllArgs(options::OPT_fno_common);
@@ -3196,6 +3194,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(Args.MakeArgString(Flags.str()));
   }
 
+  // Finally add the command to the compilation.
   C.addCommand(new Command(JA, *this, Exec, CmdArgs));
 
   if (Arg *A = Args.getLastArg(options::OPT_pg))
@@ -3981,7 +3980,7 @@ void darwin::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
 
   if (getToolChain().getTriple().getArch() != llvm::Triple::x86_64 &&
       (((Args.hasArg(options::OPT_mkernel) ||
-         Args.hasArg(options::OPT_fapple_kext)) &&
+	 Args.hasArg(options::OPT_fapple_kext)) &&
         (!getDarwinToolChain().isTargetIPhoneOS() ||
          getDarwinToolChain().isIPhoneOSVersionLT(6, 0))) ||
        Args.hasArg(options::OPT_static)))

@@ -23,7 +23,9 @@
 #include "clang/Format/Format.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Lex/Lexer.h"
+#include "llvm/Support/Allocator.h"
 #include "llvm/Support/Debug.h"
+#include <queue>
 #include <string>
 
 namespace clang {
@@ -41,11 +43,11 @@ FormatStyle getLLVMStyle() {
   LLVMStyle.SpacesBeforeTrailingComments = 1;
   LLVMStyle.BinPackParameters = true;
   LLVMStyle.AllowAllParametersOfDeclarationOnNextLine = true;
-  LLVMStyle.AllowReturnTypeOnItsOwnLine = true;
   LLVMStyle.ConstructorInitializerAllOnOneLineOrOnePerLine = false;
   LLVMStyle.AllowShortIfStatementsOnASingleLine = false;
   LLVMStyle.ObjCSpaceBeforeProtocolList = true;
   LLVMStyle.PenaltyExcessCharacter = 1000000;
+  LLVMStyle.PenaltyReturnTypeOnItsOwnLine = 5;
   return LLVMStyle;
 }
 
@@ -61,11 +63,11 @@ FormatStyle getGoogleStyle() {
   GoogleStyle.SpacesBeforeTrailingComments = 2;
   GoogleStyle.BinPackParameters = false;
   GoogleStyle.AllowAllParametersOfDeclarationOnNextLine = true;
-  GoogleStyle.AllowReturnTypeOnItsOwnLine = false;
   GoogleStyle.ConstructorInitializerAllOnOneLineOrOnePerLine = true;
   GoogleStyle.AllowShortIfStatementsOnASingleLine = false;
   GoogleStyle.ObjCSpaceBeforeProtocolList = false;
   GoogleStyle.PenaltyExcessCharacter = 1000000;
+  GoogleStyle.PenaltyReturnTypeOnItsOwnLine = 100;
   return GoogleStyle;
 }
 
@@ -125,7 +127,7 @@ public:
         else
           Comments.back().MinColumn = Spaces;
         Comments.back().MaxColumn =
-            Style.ColumnLimit - Spaces - Tok.FormatTok.TokenLength;
+            Style.ColumnLimit - Tok.FormatTok.TokenLength;
         return;
       }
     }
@@ -231,7 +233,7 @@ public:
                          WhitespaceManager &Whitespaces, bool StructuralError)
       : Style(Style), SourceMgr(SourceMgr), Line(Line),
         FirstIndent(FirstIndent), RootToken(RootToken),
-        Whitespaces(Whitespaces) {
+        Whitespaces(Whitespaces), Count(0) {
   }
 
   /// \brief Formats an \c UnwrappedLine.
@@ -288,7 +290,8 @@ private:
         : Indent(Indent), LastSpace(LastSpace), FirstLessLess(0),
           BreakBeforeClosingBrace(false), QuestionColumn(0),
           AvoidBinPacking(AvoidBinPacking), BreakBeforeParameter(false),
-          HasMultiParameterLine(HasMultiParameterLine), ColonPos(0) {
+          HasMultiParameterLine(HasMultiParameterLine), ColonPos(0),
+          BreakBeforeThirdOperand(false) {
     }
 
     /// \brief The position to which a specific parenthesis level needs to be
@@ -331,6 +334,9 @@ private:
 
     /// \brief The position of the colon in an ObjC method declaration/call.
     unsigned ColonPos;
+    
+    /// \brief Break before third operand in ternary expression.
+    bool BreakBeforeThirdOperand;
 
     bool operator<(const ParenState &Other) const {
       if (Indent != Other.Indent)
@@ -351,6 +357,8 @@ private:
         return HasMultiParameterLine;
       if (ColonPos != Other.ColonPos)
         return ColonPos < Other.ColonPos;
+      if (BreakBeforeThirdOperand != Other.BreakBeforeThirdOperand)
+        return BreakBeforeThirdOperand;
       return false;
     }
   };
@@ -463,6 +471,8 @@ private:
         State.Column = State.Stack.back().Indent;
       }
 
+      if (Current.is(tok::question))
+        State.Stack.back().BreakBeforeThirdOperand = true;
       if (Previous.is(tok::comma) && !State.Stack.back().AvoidBinPacking)
         State.Stack.back().BreakBeforeParameter = false;
 
@@ -522,6 +532,8 @@ private:
                 Previous.Type == TT_CtorInitializerColon) &&
                getPrecedence(Previous) != prec::Assignment)
         State.Stack.back().LastSpace = State.Column;
+      else if (Previous.Type == TT_InheritanceColon)
+        State.Stack.back().Indent = State.Column;
       else if (Previous.ParameterCount > 1 &&
                (Previous.is(tok::l_paren) || Previous.is(tok::l_square) ||
                 Previous.is(tok::l_brace) ||
@@ -562,10 +574,15 @@ private:
     const AnnotatedToken &Current = *State.NextToken;
     assert(State.Stack.size());
 
+    if (Current.Type == TT_InheritanceColon)
+      State.Stack.back().AvoidBinPacking = true;
     if (Current.is(tok::lessless) && State.Stack.back().FirstLessLess == 0)
       State.Stack.back().FirstLessLess = State.Column;
     if (Current.is(tok::question))
       State.Stack.back().QuestionColumn = State.Column;
+    if (Current.Type == TT_CtorInitializerColon &&
+        Style.ConstructorInitializerAllOnOneLineOrOnePerLine)
+      State.Stack.back().AvoidBinPacking = true;
     if (Current.is(tok::l_brace) && Current.MatchingParen != NULL &&
         !Current.MatchingParen->MustBreakBefore) {
       if (getLengthToMatchingParen(Current) + State.Column > getColumnLimit())
@@ -633,13 +650,31 @@ private:
     return Style.ColumnLimit - (Line.InPPDirective ? 1 : 0);
   }
 
-  /// \brief An edge in the solution space starting from the \c LineState and
-  /// inserting a newline dependent on the \c bool.
-  typedef std::pair<bool, const LineState *> Edge;
+  /// \brief An edge in the solution space from \c Previous->State to \c State,
+  /// inserting a newline dependent on the \c NewLine.
+  struct StateNode {
+    StateNode(const LineState &State, bool NewLine, StateNode *Previous)
+        : State(State), NewLine(NewLine), Previous(Previous) {
+    }
+    LineState State;
+    bool NewLine;
+    StateNode *Previous;
+  };
 
-  /// \brief An item in the prioritized BFS search queue. The \c LineState was
-  /// reached using the \c Edge.
-  typedef std::pair<LineState, Edge> QueueItem;
+  /// \brief A pair of <penalty, count> that is used to prioritize the BFS on.
+  ///
+  /// In case of equal penalties, we want to prefer states that were inserted
+  /// first. During state generation we make sure that we insert states first
+  /// that break the line as late as possible.
+  typedef std::pair<unsigned, unsigned> OrderedPenalty;
+
+  /// \brief An item in the prioritized BFS search queue. The \c StateNode's
+  /// \c State has the given \c OrderedPenalty.
+  typedef std::pair<OrderedPenalty, StateNode *> QueueItem;
+
+  /// \brief The BFS queue type.
+  typedef std::priority_queue<QueueItem, std::vector<QueueItem>,
+                              std::greater<QueueItem> > QueueType;
 
   /// \brief Analyze the entire solution space starting from \p InitialState.
   ///
@@ -647,32 +682,31 @@ private:
   /// the solution space (\c LineStates are the nodes). The algorithm tries to
   /// find the shortest path (the one with lowest penalty) from \p InitialState
   /// to a state where all tokens are placed.
-  unsigned analyzeSolutionSpace(const LineState &InitialState) {
+  unsigned analyzeSolutionSpace(LineState &InitialState) {
+    std::set<LineState> Seen;
+
     // Insert start element into queue.
-    std::multimap<unsigned, QueueItem> Queue;
-    Queue.insert(std::pair<unsigned, QueueItem>(
-        0, QueueItem(InitialState, Edge(false, (const LineState *)0))));
-    std::map<LineState, Edge> Seen;
+    StateNode *Node =
+        new (Allocator.Allocate()) StateNode(InitialState, false, NULL);
+    Queue.push(QueueItem(OrderedPenalty(0, Count), Node));
+    ++Count;
 
     // While not empty, take first element and follow edges.
     while (!Queue.empty()) {
-      unsigned Penalty = Queue.begin()->first;
-      QueueItem Item = Queue.begin()->second;
-      if (Item.first.NextToken == NULL) {
+      unsigned Penalty = Queue.top().first.first;
+      StateNode *Node = Queue.top().second;
+      if (Node->State.NextToken == NULL) {
         DEBUG(llvm::errs() << "\n---\nPenalty for line: " << Penalty << "\n");
         break;
       }
-      Queue.erase(Queue.begin());
+      Queue.pop();
 
-      if (Seen.find(Item.first) != Seen.end())
-        continue; // State already examined with lower penalty.
+      if (!Seen.insert(Node->State).second)
+        // State already examined with lower penalty.
+        continue;
 
-      const LineState &SavedState = Seen.insert(std::pair<LineState, Edge>(
-          Item.first,
-          Edge(Item.second.first, Item.second.second))).first->first;
-
-      addNextStateToQueue(SavedState, Penalty, /*NewLine=*/ false, Queue);
-      addNextStateToQueue(SavedState, Penalty, /*NewLine=*/ true, Queue);
+      addNextStateToQueue(Penalty, Node, /*NewLine=*/ false);
+      addNextStateToQueue(Penalty, Node, /*NewLine=*/ true);
     }
 
     if (Queue.empty())
@@ -681,46 +715,55 @@ private:
       return 0;
 
     // Reconstruct the solution.
-    // FIXME: Add debugging output.
-    Edge *CurrentEdge = &Queue.begin()->second.second;
-    while (CurrentEdge->second != NULL) {
-      LineState CurrentState = *CurrentEdge->second;
-      if (CurrentEdge->first) {
-        DEBUG(llvm::errs() << "Penalty for splitting before "
-                           << CurrentState.NextToken->FormatTok.Tok.getName()
-                           << ": " << CurrentState.NextToken->SplitPenalty
-                           << "\n");
-      }
-      addTokenToState(CurrentEdge->first, false, CurrentState);
-      CurrentEdge = &Seen[*CurrentEdge->second];
-    }
+    reconstructPath(InitialState, Queue.top().second);
     DEBUG(llvm::errs() << "---\n");
 
     // Return the column after the last token of the solution.
-    return Queue.begin()->second.first.Column;
+    return Queue.top().second->State.Column;
   }
 
-  /// \brief Add the following state to the analysis queue \p Queue.
+  void reconstructPath(LineState &State, StateNode *Current) {
+    // FIXME: This recursive implementation limits the possible number
+    // of tokens per line if compiled into a binary with small stack space.
+    // To become more independent of stack frame limitations we would need
+    // to also change the TokenAnnotator.
+    if (Current->Previous == NULL)
+      return;
+    reconstructPath(State, Current->Previous);
+    DEBUG({
+      if (Current->NewLine) {
+        llvm::errs()
+            << "Penalty for splitting before "
+            << Current->Previous->State.NextToken->FormatTok.Tok.getName()
+            << ": " << Current->Previous->State.NextToken->SplitPenalty << "\n";
+      }
+    });
+    addTokenToState(Current->NewLine, false, State);
+  }
+
+  /// \brief Add the following state to the analysis queue \c Queue.
   ///
-  /// Assume the current state is \p OldState and has been reached with a
+  /// Assume the current state is \p PreviousNode and has been reached with a
   /// penalty of \p Penalty. Insert a line break if \p NewLine is \c true.
-  void addNextStateToQueue(const LineState &OldState, unsigned Penalty,
-                           bool NewLine,
-                           std::multimap<unsigned, QueueItem> &Queue) {
-    if (NewLine && !canBreak(OldState))
+  void addNextStateToQueue(unsigned Penalty, StateNode *PreviousNode,
+                           bool NewLine) {
+    if (NewLine && !canBreak(PreviousNode->State))
       return;
-    if (!NewLine && mustBreak(OldState))
+    if (!NewLine && mustBreak(PreviousNode->State))
       return;
-    LineState State(OldState);
     if (NewLine)
-      Penalty += State.NextToken->SplitPenalty;
-    addTokenToState(NewLine, true, State);
-    if (State.Column > getColumnLimit()) {
-      unsigned ExcessCharacters = State.Column - getColumnLimit();
+      Penalty += PreviousNode->State.NextToken->SplitPenalty;
+
+    StateNode *Node = new (Allocator.Allocate())
+        StateNode(PreviousNode->State, NewLine, PreviousNode);
+    addTokenToState(NewLine, true, Node->State);
+    if (Node->State.Column > getColumnLimit()) {
+      unsigned ExcessCharacters = Node->State.Column - getColumnLimit();
       Penalty += Style.PenaltyExcessCharacter * ExcessCharacters;
     }
-    Queue.insert(std::pair<unsigned, QueueItem>(
-        Penalty, QueueItem(State, Edge(NewLine, &OldState))));
+
+    Queue.push(QueueItem(OrderedPenalty(Penalty, Count), Node));
+    ++Count;
   }
 
   /// \brief Returns \c true, if a line break after \p State is allowed.
@@ -749,7 +792,8 @@ private:
       return true;
     if (State.NextToken->Parent->is(tok::comma) &&
         State.Stack.back().BreakBeforeParameter &&
-        !isTrailingComment(*State.NextToken))
+        !isTrailingComment(*State.NextToken) &&
+        State.NextToken->isNot(tok::r_paren))
       return true;
     // FIXME: Comparing LongestObjCSelectorName to 0 is a hacky way of finding
     // out whether it is the first parameter. Clean this up.
@@ -761,6 +805,9 @@ private:
          (State.NextToken->Parent->ClosesTemplateDeclaration &&
           State.ParenLevel == 0)))
       return true;
+    if (State.NextToken->is(tok::colon) &&
+        State.Stack.back().BreakBeforeThirdOperand)
+      return true;
     return false;
   }
 
@@ -770,6 +817,12 @@ private:
   const unsigned FirstIndent;
   const AnnotatedToken &RootToken;
   WhitespaceManager &Whitespaces;
+
+  llvm::SpecificBumpPtrAllocator<StateNode> Allocator;
+  QueueType Queue;
+  // Increasing count of \c StateNode items we have created. This is used
+  // to create a deterministic order independent of the container.
+  unsigned Count;
 };
 
 class LexerBasedFormatTokenSource : public FormatTokenSource {
@@ -921,16 +974,17 @@ public:
       Annotator.calculateFormattingInformation(AnnotatedLines[i]);
     }
     std::vector<int> IndentForLevel;
+    bool PreviousLineWasTouched = false;
     for (std::vector<AnnotatedLine>::iterator I = AnnotatedLines.begin(),
                                               E = AnnotatedLines.end();
          I != E; ++I) {
       const AnnotatedLine &TheLine = *I;
-      int Offset = GetIndentOffset(TheLine.First);
+      int Offset = getIndentOffset(TheLine.First);
       while (IndentForLevel.size() <= TheLine.Level)
         IndentForLevel.push_back(-1);
       IndentForLevel.resize(TheLine.Level + 1);
       if (touchesRanges(TheLine) && TheLine.Type != LT_Invalid) {
-        unsigned LevelIndent = GetIndent(IndentForLevel, TheLine.Level);
+        unsigned LevelIndent = getIndent(IndentForLevel, TheLine.Level);
         unsigned Indent = LevelIndent;
         if (static_cast<int>(Indent) + Offset >= 0)
           Indent += Offset;
@@ -948,15 +1002,8 @@ public:
                                          StructuralError);
         PreviousEndOfLineColumn = Formatter.format();
         IndentForLevel[TheLine.Level] = LevelIndent;
+        PreviousLineWasTouched = true;
       } else {
-        // If we did not reformat this unwrapped line, the column at the end of
-        // the last token is unchanged - thus, we can calculate the end of the
-        // last token.
-        PreviousEndOfLineColumn =
-            SourceMgr.getSpellingColumnNumber(
-                TheLine.Last->FormatTok.Tok.getLocation()) +
-            Lex.MeasureTokenLength(TheLine.Last->FormatTok.Tok.getLocation(),
-                                   SourceMgr, Lex.getLangOpts()) - 1;
         if (TheLine.First.FormatTok.NewlinesBefore > 0 ||
             TheLine.First.FormatTok.IsFirst) {
           unsigned Indent = SourceMgr.getSpellingColumnNumber(
@@ -965,7 +1012,21 @@ public:
           if (static_cast<int>(LevelIndent) - Offset >= 0)
             LevelIndent -= Offset;
           IndentForLevel[TheLine.Level] = LevelIndent;
+
+          // Remove trailing whitespace of the previous line if it was touched.
+          if (PreviousLineWasTouched)
+            formatFirstToken(TheLine.First, Indent, TheLine.InPPDirective,
+                             PreviousEndOfLineColumn);
         }
+        // If we did not reformat this unwrapped line, the column at the end of
+        // the last token is unchanged - thus, we can calculate the end of the
+        // last token.
+        PreviousEndOfLineColumn =
+            SourceMgr.getSpellingColumnNumber(
+                TheLine.Last->FormatTok.Tok.getLocation()) +
+            Lex.MeasureTokenLength(TheLine.Last->FormatTok.Tok.getLocation(),
+                                   SourceMgr, Lex.getLangOpts()) - 1;
+        PreviousLineWasTouched = false;
       }
     }
     return Whitespaces.generateReplacements();
@@ -977,20 +1038,19 @@ private:
   /// \p IndentForLevel must contain the indent for the level \c l
   /// at \p IndentForLevel[l], or a value < 0 if the indent for
   /// that level is unknown.
-  unsigned GetIndent(const std::vector<int> IndentForLevel,
-                     unsigned Level) {
+  unsigned getIndent(const std::vector<int> IndentForLevel, unsigned Level) {
     if (IndentForLevel[Level] != -1)
       return IndentForLevel[Level];
     if (Level == 0)
       return 0;
-    return GetIndent(IndentForLevel, Level - 1) + 2;
+    return getIndent(IndentForLevel, Level - 1) + 2;
   }
 
   /// \brief Get the offset of the line relatively to the level.
   ///
   /// For example, 'public:' labels in classes are offset by 1 or 2
   /// characters to the left from their level.
-  int GetIndentOffset(const AnnotatedToken &RootToken) {
+  int getIndentOffset(const AnnotatedToken &RootToken) {
     bool IsAccessModifier = false;
     if (RootToken.is(tok::kw_public) || RootToken.is(tok::kw_protected) ||
         RootToken.is(tok::kw_private))

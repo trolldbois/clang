@@ -2695,6 +2695,14 @@ typedef struct {
 CINDEX_LINKAGE CXType clang_getCursorType(CXCursor C);
 
 /**
+ * \brief Pretty-print the underlying type using the rules of the
+ * language of the translation unit from which it came.
+ *
+ * If the type is invalid, an empty string is returned.
+ */
+CINDEX_LINKAGE CXString clang_getTypeSpelling(CXType CT);
+
+/**
  * \brief Retrieve the underlying type of a typedef declaration.
  *
  * If the cursor does not reference a typedef declaration, an invalid type is

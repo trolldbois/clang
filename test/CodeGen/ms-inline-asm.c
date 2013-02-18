@@ -324,3 +324,33 @@ void t28() {
 // CHECK: call void asm sideeffect inteldialect ".align 7", "~{dirflag},~{fpsr},~{flags}"() nounwind
 // CHECK: call void asm sideeffect inteldialect ".align 8", "~{dirflag},~{fpsr},~{flags}"() nounwind
 }
+
+void t29() {
+  int arr[2] = {0, 0};
+  int olen = 0, osize = 0, otype = 0;
+  __asm mov olen, LENGTH arr
+  __asm mov osize, SIZE arr
+  __asm mov otype, TYPE arr
+// CHECK: t29
+// CHECK: call void asm sideeffect inteldialect "mov dword ptr $0, $$2", "=*m,~{dirflag},~{fpsr},~{flags}"(i32* %{{.*}}) nounwind
+// CHECK: call void asm sideeffect inteldialect "mov dword ptr $0, $$8", "=*m,~{dirflag},~{fpsr},~{flags}"(i32* %{{.*}}) nounwind
+// CHECK: call void asm sideeffect inteldialect "mov dword ptr $0, $$4", "=*m,~{dirflag},~{fpsr},~{flags}"(i32* %{{.*}}) nounwind
+}
+
+int results[2] = {13, 37};
+int *t30()
+{
+  int *res;
+  __asm lea edi, results
+  __asm mov res, edi
+  return res;
+// CHECK: t30
+// CHECK: call void asm sideeffect inteldialect "lea edi, dword ptr $0", "*m,~{edi},~{dirflag},~{fpsr},~{flags}"([2 x i32]* @{{.*}}) nounwind
+// CHECK: call void asm sideeffect inteldialect "mov dword ptr $0, edi", "=*m,~{dirflag},~{fpsr},~{flags}"(i32** %{{.*}}) nounwind
+}
+
+void t31(int a) {
+  __asm mov eax, dword ptr [a]
+// CHECK: t31
+// CHECK: call void asm sideeffect inteldialect "mov eax, dword ptr [$0]", "*m,~{dirflag},~{fpsr},~{flags}"(i32* %{{.*}}) nounwind
+}
