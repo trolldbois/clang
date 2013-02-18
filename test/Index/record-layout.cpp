@@ -2,7 +2,11 @@
 // RUN: c-index-test -test-print-typekind %s -target x86_64-pc-linux-gnu | FileCheck -check-prefix=CHECK64 %s
 // RUN: c-index-test -test-print-typekind %s -target i386-apple-darwin9 | FileCheck -check-prefix=CHECK32 %s
 
-// CHECK64: StructDecl=simple:[[@LINE+2]]:8 (Definition) typekind=Record [size=384] [alignment=64] [isPOD=1]
+namespace basic {
+
+void v;
+
+// CHECK64: StructDecl=simple:[[@LINE+2]]:8 (Definition) typekind=Record [size=384] [ralign=64] [isPOD=1]
 // CHECK32: StructDecl=simple:[[@LINE+1]]:8 (Definition) typekind=Record [size=288] [alignment=32] [isPOD=1]
 struct simple {
   int a;
@@ -28,10 +32,32 @@ union u {
   struct simple s1;
 };
 
+}
+
+namespace Incomplete {
+
 // expect compilation error, not crash.
 union f {
   struct forward_decl f1;
 };
+
+class A;
+class B {
+  A* a1;
+  A& a2;
+};
+
+class C;
+class D {
+  C c1;
+};
+class C {
+  int c;
+};
+
+}
+
+namespace Sizes {
 
 // CHECK64: StructDecl=A:[[@LINE+2]]:8 (Definition) typekind=Record [size=64] [alignment=32] [isPOD=1]
 // CHECK32: StructDecl=A:[[@LINE+1]]:8 (Definition) typekind=Record [size=64] [alignment=32] [isPOD=1]
@@ -86,6 +112,8 @@ struct I {
   int a;
 } __attribute__((packed));
 
+}
+
 // PR5580
 namespace PR5580 {
 
@@ -138,9 +166,8 @@ struct H { G g; };
 
 }
 
+
 namespace Test3 {
-
-
 // CHECK64: ClassDecl=B:[[@LINE+2]]:7 (Definition) typekind=Record [size=128] [alignment=64] [isPOD=0]
 // CHECK32: ClassDecl=B:[[@LINE+1]]:7 (Definition) typekind=Record [size=64] [alignment=32] [isPOD=0]
 class B {
@@ -289,6 +316,7 @@ struct EV : CV, DV {};
 
 }
 
+namespace ArchAlign {
 
 // RUN: c-index-test -test-print-typekind %s -target i386-linux-gnu | FileCheck -check-prefix=CHECK1 %s
 // RUN: c-index-test -test-print-typekind %s -target nvptx64-unknown-unknown | FileCheck -check-prefix=CHECK2 %s
@@ -332,11 +360,4 @@ struct salign {
     long b3;    
 };
 
-namespace Test4 {
-class A;
-class B {
-  A* a1;
-  A& a2;
-};
 }
-

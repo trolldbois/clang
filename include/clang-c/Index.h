@@ -2917,7 +2917,8 @@ CINDEX_LINKAGE long long clang_getTypeSizeOf(CXType T);
  *
  * If the type declaration is incomplete, -1 is returned.
  */
-CINDEX_LINKAGE long long clang_getRecordAlign(CXType T);
+//CINDEX_LINKAGE long long clang_getRecordAlign(CXType T);
+CINDEX_LINKAGE long long clang_getRecordAlign(CXCursor C);
 
 /**
  * \brief Return the offset of a field in a record in bits as returned by the AST Context.
@@ -2932,7 +2933,8 @@ CINDEX_LINKAGE long long clang_getRecordFieldOffset(CXCursor C);
  *
  * If the type declaration is incomplete, -1 is returned.
  */
-CINDEX_LINKAGE long long clang_getRecordSize(CXType T);
+//CINDEX_LINKAGE long long clang_getRecordSize(CXType T);
+CINDEX_LINKAGE long long clang_getRecordSize(CXCursor C);
 
 /**
  * \brief Returns 1 if the base class specified by the cursor with kind

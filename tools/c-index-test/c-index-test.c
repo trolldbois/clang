@@ -1152,7 +1152,7 @@ static enum CXChildVisitResult PrintType(CXCursor cursor, CXCursor p,
     }
     /* Print the record size if applicable. */
     {
-      long long Size = clang_getRecordSize(T);
+      long long Size = clang_getRecordSize(cursor);
       if (Size != -1) {
         printf(" [rsize=%lld]", Size);
       }
@@ -1166,7 +1166,7 @@ static enum CXChildVisitResult PrintType(CXCursor cursor, CXCursor p,
     }
     /* Print the record alignement if applicable. */
     {
-      long long Align = clang_getRecordAlign(T);
+      long long Align = clang_getRecordAlign(cursor);
       if (Align != -1) {
         printf(" [ralign=%lld]", Align);
       }
