@@ -2891,14 +2891,28 @@ CINDEX_LINKAGE CXType clang_getArrayElementType(CXType T);
 CINDEX_LINKAGE long long clang_getArraySize(CXType T);
 
 /**
- * \brief Return the alignment of a type, in bits.
+ * \brief Return the alignment of a type in bytes as per C++[expr.alignof] standard.
+ * 
+ * If the type declaration is incomplete or invalid, -1 is returned.
+ */
+CINDEX_LINKAGE long long clang_getTypeAlignOf(CXType T);
+
+/**
+ * \brief Return the size of a type in bytes as per C++[expr.sizeof] standard.
+ * 
+ * If the type declaration is incomplete or invalid, -1 is returned.
+ */
+CINDEX_LINKAGE long long clang_getTypeSizeOf(CXType T);
+
+/**
+ * \brief Return the alignment of a record in bits as returned by the AST Context.
  *
  * If the type declaration is incomplete, -1 is returned.
  */
-CINDEX_LINKAGE long long clang_getTypeAlign(CXType T);
+CINDEX_LINKAGE long long clang_getRecordAlign(CXType T);
 
 /**
- * \brief Return the offset of a field in a record in bits.
+ * \brief Return the offset of a field in a record in bits as returned by the AST Context.
  *
  * If the cursor is not a record field declaration, -1 is returned.
  * If the field type declaration is incomplete, -1 is returned.
@@ -2906,11 +2920,11 @@ CINDEX_LINKAGE long long clang_getTypeAlign(CXType T);
 CINDEX_LINKAGE long long clang_getRecordFieldOffset(CXCursor C);
 
 /**
- * \brief Return the size of a record in bits.
+ * \brief Return the size of a record in bits as returned by the AST Context.
  *
  * If the type declaration is incomplete, -1 is returned.
  */
-CINDEX_LINKAGE long long clang_getTypeSize(CXType T);
+CINDEX_LINKAGE long long clang_getRecordSize(CXType T);
 
 /**
  * \brief Returns 1 if the base class specified by the cursor with kind

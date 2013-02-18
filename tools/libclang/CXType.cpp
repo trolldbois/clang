@@ -636,21 +636,56 @@ long long clang_getArraySize(CXType CT) {
   return result;
 }
 
-long long clang_getTypeAlign(CXType T) {
+long long clang_getTypeAlignOf(CXType T) {
+  if (T.kind == CXType_Invalid)
+      return -1;
   CXTranslationUnit TU = GetTU(T);
   ASTContext &Ctx = cxtu::getASTUnit(TU)->getASTContext();
-  switch (T.kind) {
-    case CXType_Invalid:
-      return -1;
-    case CXType_Void:
-      return 8;
-    default:
-      break;
-  }
-  
   QualType QT = GetQualType(T);
-  if (QT->isIncompleteType()) 
-    return -1;
+  // [expr.alignof] p1: return size_t value for complete object type, reference or array.
+  // [expr.alignof] p1: if reference type, return size of referenced type
+  if (QT->isIncompleteType())
+      return -1;
+  // see getTypeInfoImpl ASTContext.cpp:1313
+  // see ReferenceType implementation in ASTContext.cpp:1482
+  //if (QT->isReferenceType()) 
+  //  QT = QT.getNonReferenceType();
+  //if (QT->isVoidType())
+  //  return 8;
+  return Ctx.getTypeAlignInChars(QT).getQuantity();
+}
+
+long long clang_getTypeSizeOf(CXType T) {
+  if (T.kind == CXType_Invalid)
+      return -1;
+  CXTranslationUnit TU = GetTU(T);
+  ASTContext &Ctx = cxtu::getASTUnit(TU)->getASTContext();
+  QualType QT = GetQualType(T);
+  if (QT->isIncompleteType())
+      return -1;
+  // [expr.sizeof] p1: return -1 on: func, incomplete, bitfield, incomplete enumeration
+  // [expr.sizeof] p2: if reference type, return size of referenced type
+  // [expr.sizeof] p3: pointer ok, function not ok.
+  // see getTypeInfoImpl ASTContext.cpp:1313
+  //if (QT->isVoidType() || QT->isFunctionType())
+  //  return 1;
+  //if (QT->isReferenceType())
+  //  QT = QT.getNonReferenceType();
+ return Ctx.getTypeSizeInChars(QT).getQuantity();
+}
+
+long long clang_getRecordAlign(CXType T) {
+  if (T.kind == CXType_Invalid)
+      return -1;  
+  CXTranslationUnit TU = GetTU(T);
+  ASTContext &Ctx = cxtu::getASTUnit(TU)->getASTContext();
+  QualType QT = GetQualType(T);
+  if (QT->isIncompleteType()) {
+    const Decl *D = cxcursor::getCursorDecl(clang_getTypeDeclaration(T));
+    if (cxtu::getASTUnit(TU)->getSema().RequireCompleteType(D->getLocation(), QT,
+                            diag::err_typecheck_decl_incomplete_type))
+      return -1;
+  }
   return Ctx.getTypeAlign(QT);
 }
 
@@ -670,29 +705,19 @@ long long clang_getRecordFieldOffset(CXCursor C) {
   return Layout.getFieldOffset(FieldNo);
 }
 
-long long clang_getTypeSize(CXType T) {
+long long clang_getRecordSize(CXType T) {
+  if (T.kind == CXType_Invalid)
+      return -1;
   CXTranslationUnit TU = GetTU(T);
   ASTContext &Ctx = cxtu::getASTUnit(TU)->getASTContext();
-  switch (T.kind) {
-    case CXType_Invalid:
-      return -1;
-    case CXType_FunctionProto:
-    case CXType_Void:
-      return 8;
-    default:
-      break;
-  }
-
   QualType QT = GetQualType(T);
   if (QT->isIncompleteType()) {
     const Decl *D = cxcursor::getCursorDecl(clang_getTypeDeclaration(T));
-    bool ret = cxtu::getASTUnit(TU)->getSema().RequireCompleteType(D->getLocation(), QT,
-                            diag::err_typecheck_decl_incomplete_type);
-    if (ret)
+    if (cxtu::getASTUnit(TU)->getSema().RequireCompleteType(D->getLocation(), QT,
+                            diag::err_typecheck_decl_incomplete_type))
       return -1;
   }
-
- return Ctx.getTypeSize(QT);
+  return Ctx.getTypeSize(QT);
 }
 
 CXString clang_getDeclObjCTypeEncoding(CXCursor C) {
