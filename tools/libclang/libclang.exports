@@ -190,9 +190,9 @@ clang_getPresumedLocation
 clang_getRange
 clang_getRangeEnd
 clang_getRangeStart
-clang_getRecordAlign
-clang_getRecordFieldOffset
-clang_getRecordSize
+clang_getRecordLayoutAlign
+clang_getRecordLayoutFieldOffset
+clang_getRecordLayoutSize
 clang_getRemappings
 clang_getRemappingsFromFileList
 clang_getResultType

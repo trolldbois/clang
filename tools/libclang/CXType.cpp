@@ -688,25 +688,24 @@ long long clang_getTypeSizeOf(CXType T) {
   //  QT = QT.getNonReferenceType();
  return Ctx.getTypeSizeInChars(QT).getQuantity();
 }
-/*
-long long clang_getRecordAlign(CXType T) {
+
+long long clang_getRecordLayoutAlign(CXType T) {
   if (T.kind == CXType_Invalid)
       return -1;  
-  CXTranslationUnit TU = GetTU(T);
-  ASTContext &Ctx = cxtu::getASTUnit(TU)->getASTContext();
+  const Decl *D = cxcursor::getCursorDecl(clang_getTypeDeclaration(T));
+  if (!D)
+    return -1;
   QualType QT = GetQualType(T);
-  if (QT->isIncompleteType()) {
-    const Decl *D = cxcursor::getCursorDecl(clang_getTypeDeclaration(T));
-    if (!D)
-      return -1;
-    if (cxtu::getASTUnit(TU)->getSema().RequireCompleteType(D->getLocation(), QT,
+  if (QT->isIncompleteType() &&
+      cxtu::getASTUnit(GetTU(T))->getSema().RequireCompleteType(D->getLocation(), QT,
                             diag::err_typecheck_decl_incomplete_type))
       return -1;
-  }
-  return Ctx.getTypeAlign(QT);
+  ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
+  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(RD);
+  return Layout.getAlignment().getQuantity();
 }
-*/
-long long clang_getRecordFieldOffset(CXCursor C) {
+
+long long clang_getRecordLayoutFieldOffset(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
     return -1;
   const Decl *D = cxcursor::getCursorDecl(C);
@@ -721,49 +720,22 @@ long long clang_getRecordFieldOffset(CXCursor C) {
   const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(FD->getParent());
   return Layout.getFieldOffset(FieldNo);
 }
-/*
-long long clang_getRecordSize(CXType T) {
+
+// FIXME clang_getFieldDeclBitWidth redundant ?
+long long clang_getRecordLayoutSize(CXType T) {
   if (T.kind == CXType_Invalid)
-      return -1;
-  CXTranslationUnit TU = GetTU(T);
-  ASTContext &Ctx = cxtu::getASTUnit(TU)->getASTContext();
+      return -1;  
+  const Decl *D = cxcursor::getCursorDecl(clang_getTypeDeclaration(T));
+  if (!D)
+    return -1;
   QualType QT = GetQualType(T);
-  if (QT->isIncompleteType()) {
-    const Decl *D = cxcursor::getCursorDecl(clang_getTypeDeclaration(T));
-    if (!D)
-      return -1;
-    if (cxtu::getASTUnit(TU)->getSema().RequireCompleteType(D->getLocation(), QT,
+  if (QT->isIncompleteType() &&
+      cxtu::getASTUnit(GetTU(T))->getSema().RequireCompleteType(D->getLocation(), QT,
                             diag::err_typecheck_decl_incomplete_type))
       return -1;
-  }
-  return Ctx.getTypeSize(QT);
-}
-*/
-
-long long clang_getRecordSize(CXCursor C) {
-  if (!clang_isDeclaration(C.kind))
-    return -1;
-  const Decl *D = cxcursor::getCursorDecl(C);
-  const RecordDecl *RD = dyn_cast<RecordDecl>(D);
-  if (!RD)
-    return -1;
-
-  ASTContext &Ctx = cxcursor::getCursorContext(C);
+  ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
   const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(RD);
   return Layout.getSize().getQuantity();
-}
-
-long long clang_getRecordAlignment(CXCursor C) {
-  if (!clang_isDeclaration(C.kind))
-    return -1;
-  const Decl *D = cxcursor::getCursorDecl(C);
-  const RecordDecl *RD = dyn_cast<RecordDecl>(D);
-  if (!RD)
-    return -1;
-
-  ASTContext &Ctx = cxcursor::getCursorContext(C);
-  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(RD);
-  return Layout.getAlignment().getQuantity();
 }
 
 CXString clang_getDeclObjCTypeEncoding(CXCursor C) {
