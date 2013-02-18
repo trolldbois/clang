@@ -332,9 +332,11 @@ struct salign {
     long b3;    
 };
 
+namespace Test4 {
 class A;
 class B {
   A* a1;
   A& a2;
+};
 }
 
