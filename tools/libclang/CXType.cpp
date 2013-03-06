@@ -654,95 +654,55 @@ long long clang_getArraySize(CXType CT) {
 long long clang_getTypeAlignOf(CXType T) {
   if (T.kind == CXType_Invalid)
       return -1;
-  CXTranslationUnit TU = GetTU(T);
-  ASTContext &Ctx = cxtu::getASTUnit(TU)->getASTContext();
+  ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
   QualType QT = GetQualType(T);
   // [expr.alignof] p1: return size_t value for complete object type, reference or array.
   // [expr.alignof] p3: if reference type, return size of referenced type
   if (QT->isReferenceType()) 
     QT = QT.getNonReferenceType();
   if (QT->isIncompleteType())
-    return -1;
-  // GCC extension - see ASTContext.cpp:1313 getTypeInfoImpl 
-  if (QT->isVoidType())
-    return 1; 
+    return -2;
+  // Exceptions by GCC extension - see ASTContext.cpp:1313 getTypeInfoImpl 
+  // if (QT->isFunctionType()) return 4;
+  // if (QT->isVoidType()) return 1;
   return Ctx.getTypeAlignInChars(QT).getQuantity();
 }
 
 long long clang_getTypeSizeOf(CXType T) {
   if (T.kind == CXType_Invalid)
-      return -1;
-  // -1 on bitfield and func ? forget it.
-  //const Decl *D = cxcursor::getCursorDecl(C);
-  //const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(D);
-  //if (!FD)
-  //  return -1;
-      
-  CXTranslationUnit TU = GetTU(T);
-  ASTContext &Ctx = cxtu::getASTUnit(TU)->getASTContext();
+      return -1;      
+  ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
   QualType QT = GetQualType(T);
   // [expr.sizeof] p2: if reference type, return size of referenced type
-  if (QT->isReferenceType()) // See assumption in ASTContext.cpp:1483 getTypeInfoImpl 
+  if (QT->isReferenceType())
     QT = QT.getNonReferenceType();
   // [expr.sizeof] p1: return -1 on: func, incomplete, bitfield, incomplete enumeration
   // [expr.sizeof] p3: pointer ok, function not ok.
-  // [gcc extension] lib/AST/ExprConstant.cpp:1372 HandleSizeof : {voidtype,functype} == 1, vla == -1
-  if (QT->isIncompleteType() || !QT->isConstantSizeType())
-    return -1;
+  if (QT->isIncompleteType())
+    return -2;
+  // [gcc extension] lib/AST/ExprConstant.cpp:1372 HandleSizeof : vla == error
+  if (!QT->isConstantSizeType()) 
+    return -3;
+  // [gcc extension] lib/AST/ExprConstant.cpp:1372 HandleSizeof : {voidtype,functype} == 1
+  // not handled by ASTContext.cpp:1313 getTypeInfoImpl
   if (QT->isVoidType() || QT->isFunctionType()) 
     return 1;
   return Ctx.getTypeSizeInChars(QT).getQuantity();
 }
 
-long long clang_getRecordLayoutAlign(CXType T) {
-  if (T.kind == CXType_Invalid)
-      return -1;  
-  const Decl *D = cxcursor::getCursorDecl(clang_getTypeDeclaration(T));
-  const RecordDecl *RD = dyn_cast_or_null<RecordDecl>(D);
-  if (!RD)
-    return -1;
-  QualType QT = GetQualType(T);
-  if (QT->isIncompleteType() &&
-      cxtu::getASTUnit(GetTU(T))->getSema().RequireCompleteType(RD->getLocation(), QT,
-                            diag::err_typecheck_decl_incomplete_type))
-      return -1;
-  ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
-  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(RD);
-  return Layout.getAlignment().getQuantity();
-}
-
-long long clang_getRecordLayoutFieldOffset(CXCursor C) {
+long long clang_getRecordFieldOffsetInBits(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
     return -1;
-  const Decl *D = cxcursor::getCursorDecl(C);
-  const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(D);
+  const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(cxcursor::getCursorDecl(C));
   if (!FD)
     return -1;
   QualType QT = GetQualType(clang_getCursorType(C));
   if (QT->isIncompleteType()) 
-    return -1;
+    return -2;
   ASTContext &Ctx = cxcursor::getCursorContext(C);
   unsigned FieldNo = FD->getFieldIndex();
   const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(FD->getParent());
   return Layout.getFieldOffset(FieldNo);
-}
-
-// FIXME clang_getFieldDeclBitWidth redundant ?
-long long clang_getRecordLayoutSize(CXType T) {
-  if (T.kind == CXType_Invalid)
-      return -1;  
-  const Decl *D = cxcursor::getCursorDecl(clang_getTypeDeclaration(T));
-  const RecordDecl *RD = dyn_cast_or_null<RecordDecl>(D);
-  if (!RD)
-    return -1;
-  QualType QT = GetQualType(T);
-  if (QT->isIncompleteType() &&
-      cxtu::getASTUnit(GetTU(T))->getSema().RequireCompleteType(RD->getLocation(), QT,
-                            diag::err_typecheck_decl_incomplete_type))
-      return -1;
-  ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
-  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(RD);
-  return Layout.getSize().getQuantity();
 }
 
 CXString clang_getDeclObjCTypeEncoding(CXCursor C) {
