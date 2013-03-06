@@ -314,14 +314,14 @@ struct a {
     tries=[(['-target','i386-linux-gnu'],(4,16,0,32,35,64)),
            (['-target','nvptx64-unknown-unknown'],(8,24,0,64,67,128)),
            (['-target','i386-pc-win32'],(8,16,0,32,35,64)),
-           (['-target','msp430-none-none'],(4,12,0,32,35,48))]
+           (['-target','msp430-none-none'],(2,14,0,32,35,48))]
     for flags, values in tries:
         align,total,a1,a2,a3,a4 = values
 
         tu = get_tu(source, flags=flags)
         teststruct = get_cursor(tu, 'a')
         fields = list(teststruct.get_children())
-
+        
         assert teststruct.type.get_align() == align
         assert teststruct.type.get_size() == total
         assert fields[0].get_record_field_offset() == a1
