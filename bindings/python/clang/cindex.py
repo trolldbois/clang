@@ -2897,22 +2897,14 @@ functionList = [
    [SourceRange],
    SourceLocation),
 
-  ("clang_getResultType",
-   [Type],
-   Type,
-   Type.from_result),
-
   ("clang_getRecordFieldOffsetInBits",
    [Cursor],
    c_longlong),
 
-  ("clang_getTypeAlignOf",
+  ("clang_getResultType",
    [Type],
-   c_longlong),
-
-  ("clang_getTypeSizeOf",
-   [Type],
-   c_ulonglong),
+   Type,
+   Type.from_result),
 
   ("clang_getSpecializedCursorTemplate",
    [Cursor],
@@ -2954,6 +2946,10 @@ functionList = [
    [c_uint],
    c_char_p),
 
+  ("clang_getTypeAlignOf",
+   [Type],
+   c_longlong),
+
   ("clang_getTypeDeclaration",
    [Type],
    Cursor,
@@ -2968,6 +2964,10 @@ functionList = [
    [c_uint],
    _CXString,
    _CXString.from_result),
+
+  ("clang_getTypeSizeOf",
+   [Type],
+   c_ulonglong),
 
   ("clang_hashCursor",
    [Cursor],

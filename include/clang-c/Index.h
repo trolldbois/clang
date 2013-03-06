@@ -2900,7 +2900,7 @@ CINDEX_LINKAGE long long clang_getArraySize(CXType T);
 
 /**
  * \brief Return the alignment of a type in bytes as per C++[expr.alignof] standard.
- * 
+ *
  * If the type declaration is invalid, -1 is returned.
  * If the type declaration is incomplete or a dependent type, -2 is returned.
  */
@@ -2908,7 +2908,7 @@ CINDEX_LINKAGE long long clang_getTypeAlignOf(CXType T);
 
 /**
  * \brief Return the size of a type in bytes as per C++[expr.sizeof] standard.
- * 
+ *
  * If the type declaration is invalid, -1 is returned.
  * If the type declaration is incomplete, a dependent type or non constant size, -2 is returned.
  */

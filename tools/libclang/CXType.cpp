@@ -23,7 +23,6 @@
 #include "clang/AST/RecordLayout.h"
 #include "clang/AST/Type.h"
 #include "clang/Frontend/ASTUnit.h"
-#include "clang/Sema/SemaDiagnostic.h"
 
 using namespace clang;
 
@@ -658,11 +657,11 @@ long long clang_getTypeAlignOf(CXType T) {
   QualType QT = GetQualType(T);
   // [expr.alignof] p1: return size_t value for complete object type, reference or array.
   // [expr.alignof] p3: if reference type, return size of referenced type
-  if (QT->isReferenceType()) 
+  if (QT->isReferenceType())
     QT = QT.getNonReferenceType();
   if (QT->isIncompleteType() || QT->isDependentType())
-    return -2;    
-  // Exceptions by GCC extension - see ASTContext.cpp:1313 getTypeInfoImpl 
+    return -2;
+  // Exceptions by GCC extension - see ASTContext.cpp:1313 getTypeInfoImpl
   // if (QT->isFunctionType()) return 4;
   // if (QT->isVoidType()) return 1;
   return Ctx.getTypeAlignInChars(QT).getQuantity();
@@ -670,7 +669,7 @@ long long clang_getTypeAlignOf(CXType T) {
 
 long long clang_getTypeSizeOf(CXType T) {
   if (T.kind == CXType_Invalid)
-      return -1;      
+      return -1;
   ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
   QualType QT = GetQualType(T);
   // [expr.sizeof] p2: if reference type, return size of referenced type
@@ -680,10 +679,10 @@ long long clang_getTypeSizeOf(CXType T) {
   // [expr.sizeof] p3: pointer ok, function not ok.
   // [gcc extension] lib/AST/ExprConstant.cpp:1372 HandleSizeof : vla == error
   if (QT->isIncompleteType() || QT->isDependentType() || !QT->isConstantSizeType())
-    return -2;        
+    return -2;
   // [gcc extension] lib/AST/ExprConstant.cpp:1372 HandleSizeof : {voidtype,functype} == 1
   // not handled by ASTContext.cpp:1313 getTypeInfoImpl
-  if (QT->isVoidType() || QT->isFunctionType()) 
+  if (QT->isVoidType() || QT->isFunctionType())
     return 1;
   return Ctx.getTypeSizeInChars(QT).getQuantity();
 }
@@ -696,7 +695,7 @@ long long clang_getRecordFieldOffsetInBits(CXCursor C) {
     return -1;
   QualType QT = GetQualType(clang_getCursorType(C));
   if (QT->isIncompleteType() || QT->isDependentType() || !QT->isConstantSizeType())
-    return -2;    
+    return -2;
   ASTContext &Ctx = cxcursor::getCursorContext(C);
   unsigned FieldNo = FD->getFieldIndex();
   const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(FD->getParent());

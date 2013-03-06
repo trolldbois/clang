@@ -310,7 +310,6 @@ struct a {
     long long a4;
 };
 """
-    # try long == uint32_t
     tries=[(['-target','i386-linux-gnu'],(4,16,0,32,35,64)),
            (['-target','nvptx64-unknown-unknown'],(8,24,0,64,67,128)),
            (['-target','i386-pc-win32'],(8,16,0,32,35,64)),
