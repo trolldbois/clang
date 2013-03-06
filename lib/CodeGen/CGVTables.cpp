@@ -116,7 +116,7 @@ static void setThunkVisibility(CodeGenModule &CGM, const CXXMethodDecl *MD,
       Fn->getVisibility() != llvm::GlobalVariable::DefaultVisibility)
     return;
 
-  if (MD->getExplicitVisibility())
+  if (MD->getExplicitVisibility(ValueDecl::VisibilityForValue))
     return;
 
   switch (MD->getTemplateSpecializationKind()) {
@@ -813,8 +813,12 @@ CodeGenVTables::GenerateClassData(const CXXRecordDecl *RD) {
   EmitVTableDefinition(VTable, Linkage, RD);
 
   if (RD->getNumVBases()) {
-    llvm::GlobalVariable *VTT = GetAddrOfVTT(RD);
-    EmitVTTDefinition(VTT, Linkage, RD);
+    if (!CGM.getTarget().getCXXABI().isMicrosoft()) {
+      llvm::GlobalVariable *VTT = GetAddrOfVTT(RD);
+      EmitVTTDefinition(VTT, Linkage, RD);
+    } else {
+      // FIXME: Emit vbtables here.
+    }
   }
 
   // If this is the magic class __cxxabiv1::__fundamental_type_info,

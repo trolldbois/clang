@@ -34,8 +34,8 @@
 #include "llvm/Support/raw_ostream.h"
 #include <map>
 
-// FIXME: It would prevent to include llvm-config.h
-// if it were included before system_error.h.
+// FIXME: It would prevent us from including llvm-config.h
+// if config.h were included before system_error.h.
 #include "clang/Config/config.h"
 
 using namespace clang::driver;
@@ -249,7 +249,7 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   // FIXME: What are we going to do with -V and -b?
 
   // FIXME: This stuff needs to go into the Compilation, not the driver.
-  bool CCCPrintOptions = false, CCCPrintActions = false;
+  bool CCCPrintOptions, CCCPrintActions;
 
   InputArgList *Args = ParseArgStrings(ArgList.slice(1));
 
@@ -1107,27 +1107,11 @@ void Driver::BuildActions(const ToolChain &TC, const DerivedArgList &Args,
       Current.reset(ConstructPhaseAction(Args, Phase, Current.take()));
       if (Current->getType() == types::TY_Nothing)
         break;
-      else if (Current->getType() == types::TY_Object &&
-               Args.hasArg(options::OPT_gsplit_dwarf)) {
-        ActionList Input;
-        Input.push_back(Current.take());
-        Current.reset(new SplitDebugJobAction(Input, types::TY_Object));
-      }
     }
 
     // If we ended with something, add to the output list.
     if (Current)
       Actions.push_back(Current.take());
-  }
-
-  if (!SplitInputs.empty()) {
-    for (ActionList::iterator i = SplitInputs.begin(), e = SplitInputs.end();
-         i != e; ++i) {
-      Action *Act = *i;
-      ActionList Inputs;
-      Inputs.push_back(Act);
-      Actions.push_back(new SplitDebugJobAction(Inputs, types::TY_Object));
-    }
   }
 
   // Add a link action if necessary.
@@ -1410,8 +1394,6 @@ void Driver::BuildJobsForAction(Compilation &C,
   // Determine the place to write output to, if any.
   if (JA->getType() == types::TY_Nothing)
     Result = InputInfo(A->getType(), BaseInput);
-  else if (isa<SplitDebugJobAction>(A))
-    Result = InputInfos[0];
   else
     Result = InputInfo(GetNamedOutputPath(C, *JA, BaseInput, AtTopLevel),
                        A->getType(), BaseInput);

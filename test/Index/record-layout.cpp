@@ -4,10 +4,17 @@
 
 namespace basic {
 
+
+// CHECK64: VarDecl=v:[[@LINE+2]]:6 (Definition) [type=void] [typekind=Void] [isPOD=0]
+// CHECK32: VarDecl=v:[[@LINE+1]]:6 (Definition) [type=void] [typekind=Void] [isPOD=0]
 void v;
 
-// CHECK64: StructDecl=simple:[[@LINE+2]]:8 (Definition) typekind=Record [size=384] [ralign=64] [isPOD=1]
-// CHECK32: StructDecl=simple:[[@LINE+1]]:8 (Definition) typekind=Record [size=288] [alignment=32] [isPOD=1]
+// CHECK64: VarDecl=v1:[[@LINE+2]]:7 (Definition) [type=void *] [typekind=Pointer] [sizeof=1] [alignof=8] [isPOD=1]
+// CHECK32: VarDecl=v1:[[@LINE+1]]:7 (Definition) [type=void *] [typekind=Pointer] [sizeof=1] [alignof=4] [isPOD=1]
+void *v1;
+
+// CHECK64: StructDecl=simple:[[@LINE+2]]:8 (Definition) [typekind=Record] [sizeof=384] [alignof=64] [isPOD=1]
+// CHECK32: StructDecl=simple:[[@LINE+1]]:8 (Definition) [typekind=Record] [sizeof=288] [alignof=32] [isPOD=1]
 struct simple {
   int a;
   char b;
@@ -224,7 +231,11 @@ struct BaseStruct
     BaseStruct(){}
     double v0;
     float v1;
+// CHECK64: FieldDecl=fg:[[@LINE+2]]:8 (Definition) [type=Test3::C &] [typekind=LValueReference] [sizeof=88] [alignof=8] [offset=128] [isPOD=0]
+// CHECK32: FieldDecl=fg:[[@LINE+1]]:8 (Definition) [type=Test3::C &] [typekind=LValueReference] [sizeof=60] [alignof=4] [offset=96] [isPOD=0]
     C fg;
+// CHECK64: FieldDecl=rg:[[@LINE+2]]:8 (Definition) [type=Test3::C &] [typekind=LValueReference] [sizeof=88] [alignof=8] [offset=832] [isPOD=0]
+// CHECK32: FieldDecl=rg:[[@LINE+1]]:8 (Definition) [type=Test3::C &] [typekind=LValueReference] [sizeof=60] [alignof=4] [offset=576] [isPOD=0]
     C &rg;
     int x;
 };
