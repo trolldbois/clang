@@ -311,8 +311,10 @@ struct a {
 };
 """
     # try long == uint32_t
-    tries=[(['-target','i386-linux-gnu'],(32,128,0,32,35,64)),(['-target','nvptx64-unknown-unknown'],(64,192,0,64,67,128)),
-            (['-target','i386-pc-win32'],(64,128,0,32,35,64)), (['-target','msp430-none-none'],(16,112,0,32,35,48))]
+    tries=[(['-target','i386-linux-gnu'],(4,16,0,32,35,64)),
+           (['-target','nvptx64-unknown-unknown'],(8,24,0,64,67,128)),
+           (['-target','i386-pc-win32'],(8,16,0,32,35,64)),
+           (['-target','msp430-none-none'],(4,12,0,32,35,48))]
     for flags, values in tries:
         align,total,a1,a2,a3,a4 = values
 

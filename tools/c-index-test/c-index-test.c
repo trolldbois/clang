@@ -1136,6 +1136,20 @@ static enum CXChildVisitResult PrintType(CXCursor cursor, CXCursor p,
         printf("]");
       }
     }
+    /* Print if this is a non-POD type. */
+    printf(" [isPOD=%d]", clang_isPODType(T));
+
+    printf("\n");
+  }
+  return CXChildVisit_Recurse;
+}
+
+static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
+                                         CXClientData d) {
+  if (!clang_isInvalid(clang_getCursorKind(cursor))) {
+    CXType T = clang_getCursorType(cursor);
+    PrintCursor(cursor, NULL);
+    PrintTypeAndTypeKind(T, " [type=%s] [typekind=%s]");
     /* Print the type sizeof if applicable. */
     {
       long long Size = clang_getTypeSizeOf(T);
@@ -1157,8 +1171,6 @@ static enum CXChildVisitResult PrintType(CXCursor cursor, CXCursor p,
         printf(" [offset=%lld]", Offset);
       }
     }
-    /* Print if this is a non-POD type. */
-    printf(" [isPOD=%d]", clang_isPODType(T));
 
     printf("\n");
   }
@@ -3569,6 +3581,7 @@ static void print_usage(void) {
   fprintf(stderr,
     "       c-index-test -test-print-linkage-source {<args>}*\n"
     "       c-index-test -test-print-type {<args>}*\n"
+    "       c-index-test -test-print-type-size {<args>}*\n"
     "       c-index-test -test-print-bitwidth {<args>}*\n"
     "       c-index-test -print-usr [<CursorKind> {<args>}]*\n"
     "       c-index-test -print-usr-file <file>\n"
@@ -3653,6 +3666,9 @@ int cindextest_main(int argc, const char **argv) {
   else if (argc > 2 && strcmp(argv[1], "-test-print-type") == 0)
     return perform_test_load_source(argc - 2, argv + 2, "all",
                                     PrintType, 0);
+  else if (argc > 2 && strcmp(argv[1], "-test-print-type-size") == 0)
+    return perform_test_load_source(argc - 2, argv + 2, "all",
+                                    PrintTypeSize, 0);
   else if (argc > 2 && strcmp(argv[1], "-test-print-bitwidth") == 0)
     return perform_test_load_source(argc - 2, argv + 2, "all",
                                     PrintBitWidth, 0);

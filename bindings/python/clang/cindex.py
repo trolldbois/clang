@@ -1318,7 +1318,7 @@ class Cursor(Structure):
         """
         Retrieve the offset of a field in his record, in number of bits.
         """
-        return conf.lib.clang_getRecordFieldOffset(self)
+        return conf.lib.clang_getRecordFieldOffsetInBits(self)
 
     @staticmethod
     def from_result(res, fn, args):
@@ -1623,13 +1623,13 @@ class Type(Structure):
         """
         Retrieve the alignment of the record.
         """
-        return conf.lib.clang_getTypeAlign(self)
+        return conf.lib.clang_getTypeAlignOf(self)
 
     def get_size(self):
         """
         Retrieve the size of the record.
         """
-        return conf.lib.clang_getTypeSize(self)
+        return conf.lib.clang_getTypeSizeOf(self)
 
     def __eq__(self, other):
         if type(other) != type(self):
@@ -2902,15 +2902,15 @@ functionList = [
    Type,
    Type.from_result),
 
-  ("clang_getRecordFieldOffset",
+  ("clang_getRecordFieldOffsetInBits",
    [Cursor],
    c_longlong),
 
-  ("clang_getTypeAlign",
+  ("clang_getTypeAlignOf",
    [Type],
    c_longlong),
 
-  ("clang_getTypeSize",
+  ("clang_getTypeSizeOf",
    [Type],
    c_ulonglong),
 
