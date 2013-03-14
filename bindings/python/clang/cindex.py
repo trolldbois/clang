@@ -1320,6 +1320,12 @@ class Cursor(Structure):
         """
         return conf.lib.clang_getRecordFieldOffsetInBits(self)
 
+    def get_record_bitfield_width(self):
+        """
+        Retrieve the width of a bitfield.
+        """
+        return conf.lib.clang_getFieldDeclBitWidth(self)
+
     @staticmethod
     def from_result(res, fn, args):
         assert isinstance(res, Cursor)
@@ -2640,6 +2646,10 @@ functionList = [
   ("clang_getArraySize",
    [Type],
    c_longlong),
+
+  ("clang_getFieldDeclBitWidth",
+   [Cursor],
+   c_int),
 
   ("clang_getCanonicalCursor",
    [Cursor],
