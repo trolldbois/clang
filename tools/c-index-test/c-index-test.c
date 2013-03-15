@@ -1155,21 +1155,21 @@ static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
   PrintTypeAndTypeKind(T, " [type=%s] [typekind=%s]");
   /* Print the type sizeof if applicable. */
   {
-    long long Size = clang_getTypeSizeOf(T);
+    long long Size = clang_getSizeOf(T);
     if (Size >= 0) {
       printf(" [sizeof=%lld]", Size);
     }
   }
   /* Print the type alignof if applicable. */
   {
-    long long Align = clang_getTypeAlignOf(T);
+    long long Align = clang_getAlignOf(T);
     if (Align >= 0) {
       printf(" [alignof=%lld]", Align);
     }
   }
   /* Print the record field offset if applicable. */
   {
-    long long Offset = clang_getOffsetOf(cursor);
+    long long Offset = clang_getOffsetOfField(cursor);
     if (Offset >= 0) {
       printf(" [offset=%lld]", Offset);
     }

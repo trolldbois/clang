@@ -650,7 +650,7 @@ long long clang_getArraySize(CXType CT) {
   return result;
 }
 
-long long clang_getTypeAlignOf(CXType T) {
+long long clang_getAlignOf(CXType T) {
   if (T.kind == CXType_Invalid)
     return CXTypeLayoutError_Invalid;
   ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
@@ -664,12 +664,12 @@ long long clang_getTypeAlignOf(CXType T) {
   if (QT->isDependentType())
     return CXTypeLayoutError_Dependent;
   // Exceptions by GCC extension - see ASTContext.cpp:1313 getTypeInfoImpl
-  // if (QT->isFunctionType()) return 4; // Bug #15511
+  // if (QT->isFunctionType()) return 4; // Bug #15511 - should be 1
   // if (QT->isVoidType()) return 1;
   return Ctx.getTypeAlignInChars(QT).getQuantity();
 }
 
-long long clang_getTypeSizeOf(CXType T) {
+long long clang_getSizeOf(CXType T) {
   if (T.kind == CXType_Invalid)
     return CXTypeLayoutError_Invalid;
   ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
@@ -691,13 +691,16 @@ long long clang_getTypeSizeOf(CXType T) {
     return CXTypeLayoutError_NotConstantSize;
   // [gcc extension] lib/AST/ExprConstant.cpp:1372 HandleSizeof : {voidtype,functype} == 1
   // not handled by ASTContext.cpp:1313 getTypeInfoImpl
-  // FIXME TEST Should be 1 already
-  // if (QT->isVoidType() || QT->isFunctionType())
-  //  return 1;
+  if (QT->isVoidType() || QT->isFunctionType())
+    return 1;
   return Ctx.getTypeSizeInChars(QT).getQuantity();
 }
+/*
+long long clang_getOffsetOf(CXType T, CXString S) {
+  if (T.kind == CXType_Invalid)
+    return CXTypeLayoutError_Invalid;
 
-long long clang_getOffsetOf(CXCursor C) {
+
   if (!clang_isDeclaration(C.kind))
     return CXTypeLayoutError_Invalid;
   const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(cxcursor::getCursorDecl(C));
@@ -714,6 +717,31 @@ long long clang_getOffsetOf(CXCursor C) {
   unsigned FieldNo = FD->getFieldIndex();
   const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(FD->getParent());
   return Layout.getFieldOffset(FieldNo);
+}*/
+
+
+long long clang_getOffsetOfField(CXCursor C) {
+  if (!clang_isDeclaration(C.kind))
+    return CXTypeLayoutError_Invalid;
+  const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(cxcursor::getCursorDecl(C));
+  if (!FD)
+    return CXTypeLayoutError_Invalid;
+  ASTContext &Ctx = cxcursor::getCursorContext(C);
+  return Ctx.getFieldOffset(FD);
+  // FIXME
+/*
+  QualType QT = GetQualType(clang_getCursorType(C));
+  if (QT->isIncompleteType())
+    return CXTypeLayoutError_Incomplete;
+  if (QT->isDependentType())
+    return CXTypeLayoutError_Dependent;
+  if (!QT->isConstantSizeType())
+    return CXTypeLayoutError_NotConstantSize;
+  ASTContext &Ctx = cxcursor::getCursorContext(C);
+  unsigned FieldNo = FD->getFieldIndex();
+  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(FD->getParent());
+  return Layout.getFieldOffset(FieldNo);
+  */
 }
 
 unsigned clang_isBitfield(CXCursor C) {
@@ -724,11 +752,6 @@ unsigned clang_isBitfield(CXCursor C) {
     return 0;
   return FD->isBitField();
 }
-
-long long clang_getOffsetOf(CXType T, CXString C) {
-//???
-}
-
 
 CXString clang_getDeclObjCTypeEncoding(CXCursor C) {
   if (!clang_isDeclaration(C.kind))

@@ -1318,7 +1318,7 @@ class Cursor(Structure):
         """
         Retrieve the offset of a field in his record, in number of bits.
         """
-        return conf.lib.clang_getRecordFieldOffsetInBits(self)
+        return conf.lib.clang_getOffsetOfField(self)
 
     def get_record_bitfield_width(self):
         """
@@ -1629,13 +1629,13 @@ class Type(Structure):
         """
         Retrieve the alignment of the record.
         """
-        return conf.lib.clang_getTypeAlignOf(self)
+        return conf.lib.clang_getAlignOf(self)
 
     def get_size(self):
         """
         Retrieve the size of the record.
         """
-        return conf.lib.clang_getTypeSizeOf(self)
+        return conf.lib.clang_getSizeOf(self)
 
     def __eq__(self, other):
         if type(other) != type(self):
@@ -2633,6 +2633,10 @@ functionList = [
    [Type, Type],
    bool),
 
+  ("clang_getAlignOf",
+   [Type],
+   c_longlong),
+
   ("clang_getArgType",
    [Type, c_uint],
    Type,
@@ -2885,6 +2889,10 @@ functionList = [
    [Cursor],
    c_uint),
 
+  ("clang_getOffsetOfField",
+   [Cursor],
+   c_longlong),
+
   ("clang_getOverloadedDecl",
    [Cursor, c_uint],
    Cursor,
@@ -2907,14 +2915,14 @@ functionList = [
    [SourceRange],
    SourceLocation),
 
-  ("clang_getRecordFieldOffsetInBits",
-   [Cursor],
-   c_longlong),
-
   ("clang_getResultType",
    [Type],
    Type,
    Type.from_result),
+
+  ("clang_getSizeOf",
+   [Type],
+   c_ulonglong),
 
   ("clang_getSpecializedCursorTemplate",
    [Cursor],
@@ -2956,10 +2964,6 @@ functionList = [
    [c_uint],
    c_char_p),
 
-  ("clang_getTypeAlignOf",
-   [Type],
-   c_longlong),
-
   ("clang_getTypeDeclaration",
    [Type],
    Cursor,
@@ -2974,10 +2978,6 @@ functionList = [
    [c_uint],
    _CXString,
    _CXString.from_result),
-
-  ("clang_getTypeSizeOf",
-   [Type],
-   c_ulonglong),
 
   ("clang_hashCursor",
    [Cursor],

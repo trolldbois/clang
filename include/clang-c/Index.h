@@ -2935,7 +2935,7 @@ enum CXTypeLayoutError {
  * If the type declaration is not a constant size type, 
  *   CXTypeLayoutError_NotConstantSize is returned.
  */
-CINDEX_LINKAGE long long clang_getTypeAlignOf(CXType T);
+CINDEX_LINKAGE long long clang_getAlignOf(CXType T);
 
 /**
  * \brief Return the size of a type in bytes as per C++[expr.sizeof] standard.
@@ -2946,7 +2946,7 @@ CINDEX_LINKAGE long long clang_getTypeAlignOf(CXType T);
  * If the type declaration is a dependent type, CXTypeLayoutError_Dependent is 
  *   returned.
  */
-CINDEX_LINKAGE long long clang_getTypeSizeOf(CXType T);
+CINDEX_LINKAGE long long clang_getSizeOf(CXType T);
 
 /**
  * \brief Return the offset of a field in a record in bits as returned by the 
@@ -2961,7 +2961,7 @@ CINDEX_LINKAGE long long clang_getTypeSizeOf(CXType T);
  * If the type declaration is not a constant size type, 
  *   CXTypeLayoutError_NotConstantSize is returned.
  */
-CINDEX_LINKAGE long long clang_getOffsetOf(CXCursor C);
+CINDEX_LINKAGE long long clang_getOffsetOfField(CXCursor C);
 
 /**
  * \brief Returns 1 if the cursor specifies a Record member that is a bitfield.
