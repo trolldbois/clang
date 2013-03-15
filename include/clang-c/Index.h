@@ -2977,7 +2977,7 @@ CINDEX_LINKAGE long long clang_getSizeOf(CXType T);
  * If the type declaration is not a constant size type, 
  *   CXTypeLayoutError_NotConstantSize is returned.
  */
-CINDEX_LINKAGE long long clang_getOffsetOf(CXType T, CXString S);
+CINDEX_LINKAGE long long clang_getOffsetOf(CXType T, const char *S);
 
 /**
  * \brief Return the offset of the field specified byt the cursor as it would be 

@@ -320,12 +320,19 @@ struct a {
         tu = get_tu(source, flags=flags)
         teststruct = get_cursor(tu, 'a')
         fields = list(teststruct.get_children())
-        
+        #import code
+        #code.interact(local=locals())        
         assert teststruct.type.get_align() == align
         assert teststruct.type.get_size() == total
-        assert fields[0].get_record_field_offset() == a1
-        assert fields[1].get_record_field_offset() == a2
-        assert fields[2].get_record_field_offset() == a3
-        assert fields[3].get_record_field_offset() == a4
+        assert fields[0].get_record_field_offset() == teststruct.type.get_offset(fields[0].spelling) == a1
+        assert fields[1].get_record_field_offset() == teststruct.type.get_offset(fields[1].spelling) == a2
+        assert fields[2].get_record_field_offset() == teststruct.type.get_offset(fields[2].spelling) == a3
+        assert fields[3].get_record_field_offset() == teststruct.type.get_offset(fields[3].spelling) == a4
+        assert fields[0].is_bitfield() == False
+        assert fields[1].is_bitfield() == True
+        assert fields[1].get_bitfield_width() == 3
+        assert fields[2].is_bitfield() == True
+        assert fields[2].get_bitfield_width() == 4
+        assert fields[3].is_bitfield() == False
 
 

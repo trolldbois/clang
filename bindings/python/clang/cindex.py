@@ -1320,7 +1320,13 @@ class Cursor(Structure):
         """
         return conf.lib.clang_getOffsetOfField(self)
 
-    def get_record_bitfield_width(self):
+    def is_bitfield(self):
+        """
+        Check if the field is a bitfield.
+        """
+        return conf.lib.clang_isBitField(self)
+
+    def get_bitfield_width(self):
         """
         Retrieve the width of a bitfield.
         """
@@ -1636,6 +1642,12 @@ class Type(Structure):
         Retrieve the size of the record.
         """
         return conf.lib.clang_getSizeOf(self)
+
+    def get_offset(self, fieldname):
+        """
+        Retrieve the offset of a field in the record.
+        """
+        return conf.lib.clang_getOffsetOf(self, c_char_p(fieldname))
 
     def __eq__(self, other):
         if type(other) != type(self):
@@ -2889,6 +2901,10 @@ functionList = [
    [Cursor],
    c_uint),
 
+  ("clang_getOffsetOf",
+   [Type, c_char_p],
+   c_longlong),
+
   ("clang_getOffsetOfField",
    [Cursor],
    c_longlong),
@@ -2985,6 +3001,10 @@ functionList = [
 
   ("clang_isAttribute",
    [CursorKind],
+   bool),
+
+  ("clang_isBitField",
+   [Cursor],
    bool),
 
   ("clang_isConstQualifiedType",

@@ -1169,7 +1169,7 @@ static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
   }
   /* Print the record field offset if applicable. */
   {
-    CXString name = clang_getCursorSpelling(cursor);
+    const char *name = clang_getCString(clang_getCursorSpelling(cursor));
     /* Both function have the same code base  */
     long long Offset = clang_getOffsetOf(clang_getCursorType(p), name);
     long long Offset1 = clang_getOffsetOfField(cursor);
@@ -1185,7 +1185,7 @@ static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
   {
     int IsBitfield = clang_isBitField(cursor);
     if (IsBitfield)
-      printf(" [isBitField=%d]", IsBitfield);
+      printf(" [BitFieldSize=%d]", clang_getFieldDeclBitWidth(cursor));
   }
   printf("\n");
   return CXChildVisit_Recurse;

@@ -18,16 +18,16 @@ void *v1;
 struct simple {
   int a;
   char b;
-// CHECK64: FieldDecl=c:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=40] [isBitField=1]
+// CHECK64: FieldDecl=c:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=40] [BitFieldSize=3]
   int c:3;
   long d;
   int e:5;
-// CHECK64: FieldDecl=f:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=133] [isBitField=1]
+// CHECK64: FieldDecl=f:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=133] [BitFieldSize=4]
   int f:4;
 // CHECK64: FieldDecl=g:[[@LINE+2]]:13 (Definition) [type=long long] [typekind=LongLong] [sizeof=8] [alignof=8] [offsetof=192]
 // CHECK32: FieldDecl=g:[[@LINE+1]]:13 (Definition) [type=long long] [typekind=LongLong] [sizeof=8] [alignof=4] [offsetof=128]
   long long g;
-// CHECK64: FieldDecl=h:[[@LINE+1]]:8 (Definition) [type=char] [typekind=Char_S] [sizeof=1] [alignof=1] [offsetof=256] [isBitField=1]
+// CHECK64: FieldDecl=h:[[@LINE+1]]:8 (Definition) [type=char] [typekind=Char_S] [sizeof=1] [alignof=1] [offsetof=256] [BitFieldSize=3]
   char h:3;
   char i:3;
   float j;

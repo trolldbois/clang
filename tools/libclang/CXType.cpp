@@ -720,7 +720,7 @@ long long getOffsetOfFieldDecl(const FieldDecl * FD) {
   return Ctx.getFieldOffset(FD);
 }
 
-long long clang_getOffsetOf(CXType PT, CXString S) {
+long long clang_getOffsetOf(CXType PT, const char* S) {
   // get the parent record type declaration
   CXCursor PC = clang_getTypeDeclaration(PT);
   if (clang_isInvalid(PC.kind))
@@ -733,7 +733,7 @@ long long clang_getOffsetOf(CXType PT, CXString S) {
   if (!RD)
     return CXTypeLayoutError_Incomplete;
   // iterate the fields to get the matching name
-  StringRef fieldname = StringRef(clang_getCString(S));
+  StringRef fieldname = StringRef(clang_getCString(cxstring::createRef(S)));
   for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
        I != E; ++I) {
     if ( fieldname == (*I)->getName())
