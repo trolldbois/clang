@@ -695,7 +695,7 @@ long long clang_getSizeOf(CXType T) {
     return 1;
   return Ctx.getTypeSizeInChars(QT).getQuantity();
 }
-/*
+
 long long clang_getOffsetOf(CXType T, CXString S) {
   if (T.kind == CXType_Invalid)
     return CXTypeLayoutError_Invalid;
@@ -717,8 +717,7 @@ long long clang_getOffsetOf(CXType T, CXString S) {
   unsigned FieldNo = FD->getFieldIndex();
   const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(FD->getParent());
   return Layout.getFieldOffset(FieldNo);
-}*/
-
+}
 
 long long clang_getOffsetOfField(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
@@ -726,9 +725,16 @@ long long clang_getOffsetOfField(CXCursor C) {
   const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(cxcursor::getCursorDecl(C));
   if (!FD)
     return CXTypeLayoutError_Invalid;
+  QualType QT = GetQualType(clang_getCursorType(C));
+  if (QT->isIncompleteType())
+    return CXTypeLayoutError_Incomplete;
+  if (QT->isDependentType())
+    return CXTypeLayoutError_Dependent;
+  if (!QT->isConstantSizeType())
+    return CXTypeLayoutError_NotConstantSize;
   ASTContext &Ctx = cxcursor::getCursorContext(C);
   return Ctx.getFieldOffset(FD);
-  // FIXME
+  // FIXME: dont need RecordLayout.h
 /*
   QualType QT = GetQualType(clang_getCursorType(C));
   if (QT->isIncompleteType())
