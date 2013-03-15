@@ -20,7 +20,6 @@
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
-#include "clang/AST/RecordLayout.h"
 #include "clang/AST/Type.h"
 #include "clang/Frontend/ASTUnit.h"
 
@@ -697,26 +696,24 @@ long long clang_getSizeOf(CXType T) {
 }
 
 long long clang_getOffsetOf(CXType T, CXString S) {
-  if (T.kind == CXType_Invalid)
+  // get the parent record declaration
+  CXCursor PC = clang_getTypeDeclaration(T);
+  if (clang_isInvalid(PC.kind))
     return CXTypeLayoutError_Invalid;
-
-
-  if (!clang_isDeclaration(C.kind))
+  const RecordDecl *RD = dyn_cast_or_null<RecordDecl>(cxcursor::getCursorDecl(PC));
+  if (!RD)
     return CXTypeLayoutError_Invalid;
-  const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(cxcursor::getCursorDecl(C));
-  if (!FD)
-    return CXTypeLayoutError_Invalid;
-  QualType QT = GetQualType(clang_getCursorType(C));
-  if (QT->isIncompleteType())
+  RD = RD->getDefinition()
+  if (!RD)
     return CXTypeLayoutError_Incomplete;
-  if (QT->isDependentType())
-    return CXTypeLayoutError_Dependent;
-  if (!QT->isConstantSizeType())
-    return CXTypeLayoutError_NotConstantSize;
-  ASTContext &Ctx = cxcursor::getCursorContext(C);
-  unsigned FieldNo = FD->getFieldIndex();
-  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(FD->getParent());
-  return Layout.getFieldOffset(FieldNo);
+  // iterate the fields to get the matching name
+  ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
+  for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
+       I != E; ++I) {
+    if ((*I)->getDeclSpelling() == S)
+      return Ctx.getFieldOffset((*I));
+  }
+  return CXTypeLayoutError_InvalidFieldName;
 }
 
 long long clang_getOffsetOfField(CXCursor C) {
@@ -725,7 +722,9 @@ long long clang_getOffsetOfField(CXCursor C) {
   const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(cxcursor::getCursorDecl(C));
   if (!FD)
     return CXTypeLayoutError_Invalid;
-  QualType QT = GetQualType(clang_getCursorType(C));
+  // we need to validate the QualType before calling Ctx.getFieldOffset
+  // FIXME: use FD->getParent() to assess the parent QualType ?
+  QualType QT = GetQualType(clang_getCursorType(C)); 
   if (QT->isIncompleteType())
     return CXTypeLayoutError_Incomplete;
   if (QT->isDependentType())
@@ -734,20 +733,6 @@ long long clang_getOffsetOfField(CXCursor C) {
     return CXTypeLayoutError_NotConstantSize;
   ASTContext &Ctx = cxcursor::getCursorContext(C);
   return Ctx.getFieldOffset(FD);
-  // FIXME: dont need RecordLayout.h
-/*
-  QualType QT = GetQualType(clang_getCursorType(C));
-  if (QT->isIncompleteType())
-    return CXTypeLayoutError_Incomplete;
-  if (QT->isDependentType())
-    return CXTypeLayoutError_Dependent;
-  if (!QT->isConstantSizeType())
-    return CXTypeLayoutError_NotConstantSize;
-  ASTContext &Ctx = cxcursor::getCursorContext(C);
-  unsigned FieldNo = FD->getFieldIndex();
-  const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(FD->getParent());
-  return Layout.getFieldOffset(FieldNo);
-  */
 }
 
 unsigned clang_isBitfield(CXCursor C) {

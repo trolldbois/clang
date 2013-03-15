@@ -2920,7 +2920,11 @@ enum CXTypeLayoutError {
   /**
    * \brief QualType is not a constant size type.
    */
-  CXTypeLayoutError_NotConstantSize = -4
+  CXTypeLayoutError_NotConstantSize = -4,
+  /**
+   * \brief The Field name is not valid for this record.
+   */
+  CXTypeLayoutError_InvalidFieldName = -5
 };
 
 /**
@@ -2949,8 +2953,23 @@ CINDEX_LINKAGE long long clang_getAlignOf(CXType T);
 CINDEX_LINKAGE long long clang_getSizeOf(CXType T);
 
 /**
- * \brief Return the offset of a field in a record in bits as returned by the 
- *   AST Record Layout.
+ * \brief Return the offset of a field named S in a record of type T in bits 
+ *   as it would be returned by __offsetof__
+ *
+ * If the cursor is not a record field declaration, CXTypeLayoutError_Invalid 
+ *   is returned.
+ * If the type declaration is an incomplete type, CXTypeLayoutError_Incomplete 
+ *   is returned.
+ * If the type declaration is a dependent type, CXTypeLayoutError_Dependent is 
+ *   returned.
+ * If the type declaration is not a constant size type, 
+ *   CXTypeLayoutError_NotConstantSize is returned.
+ */
+CINDEX_LINKAGE long long clang_getOffsetOf(CXType T, CXString S);
+
+/**
+ * \brief Return the offset of the field specified byt the cursor as it would be 
+ *   returned by __offsetof__
  *
  * If the cursor is not a record field declaration, CXTypeLayoutError_Invalid 
  *   is returned.

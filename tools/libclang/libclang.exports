@@ -186,6 +186,7 @@ clang_getNumDiagnostics
 clang_getNumDiagnosticsInSet
 clang_getNumElements
 clang_getNumOverloadedDecls
+clang_getOffsetOf
 clang_getOffsetOfField
 clang_getOverloadedDecl
 clang_getOverriddenCursors
