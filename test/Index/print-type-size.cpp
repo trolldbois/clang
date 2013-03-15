@@ -12,53 +12,65 @@ void v;
 // CHECK32: VarDecl=v1:[[@LINE+1]]:7 (Definition) [type=void *] [typekind=Pointer] [sizeof=4] [alignof=4]
 void *v1;
 
+// offsetof 
 // CHECK64: StructDecl=simple:[[@LINE+2]]:8 (Definition) [type=basic::simple] [typekind=Record] [sizeof=48] [alignof=8]
 // CHECK32: StructDecl=simple:[[@LINE+1]]:8 (Definition) [type=basic::simple] [typekind=Record] [sizeof=36] [alignof=4]
 struct simple {
   int a;
   char b;
+// CHECK64: FieldDecl=c:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=40] [isBitField=1]
   int c:3;
   long d;
   int e:5;
+// CHECK64: FieldDecl=f:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=133] [isBitField=1]
   int f:4;
-// CHECK64: FieldDecl=g:[[@LINE+2]]:13 (Definition) [type=long long] [typekind=LongLong] [sizeof=8] [alignof=8] [offset=192]
-// CHECK32: FieldDecl=g:[[@LINE+1]]:13 (Definition) [type=long long] [typekind=LongLong] [sizeof=8] [alignof=4] [offset=128]
+// CHECK64: FieldDecl=g:[[@LINE+2]]:13 (Definition) [type=long long] [typekind=LongLong] [sizeof=8] [alignof=8] [offsetof=192]
+// CHECK32: FieldDecl=g:[[@LINE+1]]:13 (Definition) [type=long long] [typekind=LongLong] [sizeof=8] [alignof=4] [offsetof=128]
   long long g;
+// CHECK64: FieldDecl=h:[[@LINE+1]]:8 (Definition) [type=char] [typekind=Char_S] [sizeof=1] [alignof=1] [offsetof=256] [isBitField=1]
   char h:3;
   char i:3;
   float j;
-// CHECK64: FieldDecl=k:[[@LINE+2]]:10 (Definition) [type=char *] [typekind=Pointer] [sizeof=8] [alignof=8] [offset=320]
-// CHECK32: FieldDecl=k:[[@LINE+1]]:10 (Definition) [type=char *] [typekind=Pointer] [sizeof=4] [alignof=4] [offset=256]
+// CHECK64: FieldDecl=k:[[@LINE+2]]:10 (Definition) [type=char *] [typekind=Pointer] [sizeof=8] [alignof=8] [offsetof=320]
+// CHECK32: FieldDecl=k:[[@LINE+1]]:10 (Definition) [type=char *] [typekind=Pointer] [sizeof=4] [alignof=4] [offsetof=256]
   char * k;
 };
 
+
+// CHECK64: UnionDecl=u:[[@LINE+2]]:7 (Definition) [type=basic::u] [typekind=Record] [sizeof=48] [alignof=8]
+// CHECK32: UnionDecl=u:[[@LINE+1]]:7 (Definition) [type=basic::u] [typekind=Record] [sizeof=36] [alignof=4]
 union u {
   int u1;
   long long u2;
   struct simple s1;
 };
 
+// CHECK64: VarDecl=s1:[[@LINE+2]]:8 (Definition) [type=basic::simple] [typekind=Record] [sizeof=48] [alignof=8]
+// CHECK32: VarDecl=s1:[[@LINE+1]]:8 (Definition) [type=basic::simple] [typekind=Record] [sizeof=36] [alignof=4]
+simple s1;
+
 }
 
 namespace Incomplete {
-
 // expect compilation error, not crash.
 union f {
   struct forward_decl f1;
 };
 
-class A;
-class B {
-  A* a1;
-  A& a2;
-};
+// CHECK64: StructDecl=As:[[@LINE+1]]:8 [type=Incomplete::As] [typekind=Record]
+struct As;
 
-class C;
-class D {
-  C c1;
-};
-class C {
-  int c;
+// undefined class. Should not crash
+// CHECK64: ClassDecl=A:[[@LINE+1]]:7 [type=Incomplete::A] [typekind=Record]
+class A;
+// CHECK64: ClassDecl=B:[[@LINE+1]]:7 (Definition) [type=Incomplete::B] [typekind=Record] [sizeof=16] [alignof=8]
+class B {
+// CHECK64: FieldDecl=a1:[[@LINE+2]]:6 (Definition) [type=Incomplete::A *] [typekind=Pointer] [sizeof=8] [alignof=8] [offsetof=0]
+// CHECK32: FieldDecl=a1:[[@LINE+1]]:6 (Definition) [type=Incomplete::A *] [typekind=Pointer] [sizeof=4] [alignof=4] [offsetof=0]
+  A* a1;
+// CHECK64: FieldDecl=a2:[[@LINE+2]]:6 (Definition) [type=Incomplete::A &] [typekind=LValueReference] [offsetof=64]
+// CHECK32: FieldDecl=a2:[[@LINE+1]]:6 (Definition) [type=Incomplete::A &] [typekind=LValueReference] [offsetof=32]
+  A& a2;
 };
 
 }
@@ -120,30 +132,9 @@ struct I {
 
 }
 
-// PR5580
-namespace PR5580 {
-
-// CHECK64: ClassDecl=A:[[@LINE+2]]:7 (Definition) [type=PR5580::A] [typekind=Record] [sizeof=1] [alignof=1]
-// CHECK32: ClassDecl=A:[[@LINE+1]]:7 (Definition) [type=PR5580::A] [typekind=Record] [sizeof=1] [alignof=1]
-class A { bool iv0 : 1; };
-
-// CHECK64: ClassDecl=B:[[@LINE+2]]:7 (Definition) [type=PR5580::B] [typekind=Record] [sizeof=2] [alignof=1]
-// CHECK32: ClassDecl=B:[[@LINE+1]]:7 (Definition) [type=PR5580::B] [typekind=Record] [sizeof=2] [alignof=1]
-class B : A { bool iv0 : 1; };
-
-// CHECK64: StructDecl=C:[[@LINE+2]]:8 (Definition) [type=PR5580::C] [typekind=Record] [sizeof=1] [alignof=1]
-// CHECK32: StructDecl=C:[[@LINE+1]]:8 (Definition) [type=PR5580::C] [typekind=Record] [sizeof=1] [alignof=1]
-struct C { bool iv0 : 1; };
-
-// CHECK64: StructDecl=D:[[@LINE+2]]:8 (Definition) [type=PR5580::D] [typekind=Record] [sizeof=2] [alignof=1]
-// CHECK32: StructDecl=D:[[@LINE+1]]:8 (Definition) [type=PR5580::D] [typekind=Record] [sizeof=2] [alignof=1]
-struct D : C { bool iv0 : 1; };
-
-}
-
 namespace Test1 {
 
-// Test that we don't assert on this hierarchy.
+// Test complex class hierarchy
 struct A { };
 struct B : A { virtual void b(); };
 class C : virtual A { int c; };
@@ -172,15 +163,14 @@ struct H { G g; };
 
 }
 
-
 namespace Test3 {
 // CHECK64: ClassDecl=B:[[@LINE+2]]:7 (Definition) [type=Test3::B] [typekind=Record] [sizeof=16] [alignof=8]
 // CHECK32: ClassDecl=B:[[@LINE+1]]:7 (Definition) [type=Test3::B] [typekind=Record] [sizeof=8] [alignof=4]
 class B {
 public:
   virtual void b(){}
-// CHECK64: FieldDecl=b_field:[[@LINE+2]]:8 (Definition) [type=long] [typekind=Long] [sizeof=8] [alignof=8] [offset=64]
-// CHECK32: FieldDecl=b_field:[[@LINE+1]]:8 (Definition) [type=long] [typekind=Long] [sizeof=4] [alignof=4] [offset=32]
+// CHECK64: FieldDecl=b_field:[[@LINE+2]]:8 (Definition) [type=long] [typekind=Long] [sizeof=8] [alignof=8] [offsetof=64]
+// CHECK32: FieldDecl=b_field:[[@LINE+1]]:8 (Definition) [type=long] [typekind=Long] [sizeof=4] [alignof=4] [offsetof=32]
   long b_field;
 protected:
 private:
@@ -189,12 +179,12 @@ private:
 // CHECK32: ClassDecl=A:[[@LINE+1]]:7 (Definition) [type=Test3::A] [typekind=Record] [sizeof=16] [alignof=4]
 class A : public B {
 public:
-// CHECK64: FieldDecl=a_field:[[@LINE+2]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offset=128]
-// CHECK32: FieldDecl=a_field:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offset=64]
+// CHECK64: FieldDecl=a_field:[[@LINE+2]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=128]
+// CHECK32: FieldDecl=a_field:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=64]
   int a_field;
   virtual void a(){}
-// CHECK64: FieldDecl=one:[[@LINE+2]]:8 (Definition) [type=char] [typekind=Char_S] [sizeof=1] [alignof=1] [offset=160]
-// CHECK32: FieldDecl=one:[[@LINE+1]]:8 (Definition) [type=char] [typekind=Char_S] [sizeof=1] [alignof=1] [offset=96]
+// CHECK64: FieldDecl=one:[[@LINE+2]]:8 (Definition) [type=char] [typekind=Char_S] [sizeof=1] [alignof=1] [offsetof=160]
+// CHECK32: FieldDecl=one:[[@LINE+1]]:8 (Definition) [type=char] [typekind=Char_S] [sizeof=1] [alignof=1] [offsetof=96]
   char one;
 protected:
 private:
@@ -205,8 +195,8 @@ private:
 class D {
 public:
   virtual void b(){}
-// CHECK64: FieldDecl=a:[[@LINE+2]]:10 (Definition) [type=double] [typekind=Double] [sizeof=8] [alignof=8] [offset=64]
-// CHECK32: FieldDecl=a:[[@LINE+1]]:10 (Definition) [type=double] [typekind=Double] [sizeof=8] [alignof=4] [offset=32]
+// CHECK64: FieldDecl=a:[[@LINE+2]]:10 (Definition) [type=double] [typekind=Double] [sizeof=8] [alignof=8] [offsetof=64]
+// CHECK32: FieldDecl=a:[[@LINE+1]]:10 (Definition) [type=double] [typekind=Double] [sizeof=8] [alignof=4] [offsetof=32]
   double a;
 };
 
@@ -230,104 +220,19 @@ struct BaseStruct
     BaseStruct(){}
     double v0;
     float v1;
-// CHECK64: FieldDecl=fg:[[@LINE+2]]:7 (Definition) [type=Test3::C] [typekind=Record] [sizeof=88] [alignof=8] [offset=128]
-// CHECK32: FieldDecl=fg:[[@LINE+1]]:7 (Definition) [type=Test3::C] [typekind=Record] [sizeof=60] [alignof=4] [offset=96]
+// CHECK64: FieldDecl=fg:[[@LINE+2]]:7 (Definition) [type=Test3::C] [typekind=Record] [sizeof=88] [alignof=8] [offsetof=128]
+// CHECK32: FieldDecl=fg:[[@LINE+1]]:7 (Definition) [type=Test3::C] [typekind=Record] [sizeof=60] [alignof=4] [offsetof=96]
     C fg;
-// CHECK64: FieldDecl=rg:[[@LINE+2]]:8 (Definition) [type=Test3::C &] [typekind=LValueReference] [sizeof=88] [alignof=8] [offset=832]
-// CHECK32: FieldDecl=rg:[[@LINE+1]]:8 (Definition) [type=Test3::C &] [typekind=LValueReference] [sizeof=60] [alignof=4] [offset=576]
+// CHECK64: FieldDecl=rg:[[@LINE+2]]:8 (Definition) [type=Test3::C &] [typekind=LValueReference] [sizeof=88] [alignof=8] [offsetof=832]
+// CHECK32: FieldDecl=rg:[[@LINE+1]]:8 (Definition) [type=Test3::C &] [typekind=LValueReference] [sizeof=60] [alignof=4] [offsetof=576]
     C &rg;
     int x;
 };
 
-struct DerivedStruct : public BaseStruct { int x; };
-struct G { int g_field; };
-struct H : public G, public virtual D {};
-
-// CHECK64: StructDecl=I:[[@LINE+2]]:8 (Definition) [type=Test3::I] [typekind=Record] [sizeof=32] [alignof=8]
-// CHECK32: StructDecl=I:[[@LINE+1]]:8 (Definition) [type=Test3::I] [typekind=Record] [sizeof=24] [alignof=4]
-struct I : public virtual D
-{
-  virtual ~I(){}
-  double q;
-};
-
-struct K { int k; };
-
-struct L { int l; };
-
-struct M : public virtual K { int m; };
-
-// CHECK64: StructDecl=N:[[@LINE+2]]:8 (Definition) [type=Test3::N] [typekind=Record] [sizeof=24] [alignof=8]
-// CHECK32: StructDecl=N:[[@LINE+1]]:8 (Definition) [type=Test3::N] [typekind=Record] [sizeof=16] [alignof=4]
-struct N : public L, public M { virtual void f(){} };
-
-// CHECK64: StructDecl=O:[[@LINE+2]]:8 (Definition) [type=Test3::O] [typekind=Record] [sizeof=32] [alignof=8]
-// CHECK32: StructDecl=O:[[@LINE+1]]:8 (Definition) [type=Test3::O] [typekind=Record] [sizeof=24] [alignof=4]
-struct O : public H, public G { virtual void fo(){} };
-
-// CHECK64: StructDecl=P:[[@LINE+2]]:8 (Definition) [type=Test3::P] [typekind=Record] [sizeof=24] [alignof=8]
-// CHECK32: StructDecl=P:[[@LINE+1]]:8 (Definition) [type=Test3::P] [typekind=Record] [sizeof=20] [alignof=4]
-struct P : public M, public virtual L { int p; };
-
-struct R {};
-
-class IA {
-public:
-  virtual ~IA(){}
-  virtual void ia() = 0;
-};
-
-class ICh : public virtual IA {
-public:
-  virtual ~ICh(){}
-  virtual void ia(){}
-  virtual void iCh(){}
-};
-
-struct f { virtual int asd() {return -90;} };
-
-struct s : public virtual f {
-  virtual ~s(){}
-  int r;
-  virtual int asd() {return -9;}
-};
-
-// CHECK64: StructDecl=sd:[[@LINE+2]]:8 (Definition) [type=Test3::sd] [typekind=Record] [sizeof=32] [alignof=8]
-// CHECK32: StructDecl=sd:[[@LINE+1]]:8 (Definition) [type=Test3::sd] [typekind=Record] [sizeof=20] [alignof=4]
-struct sd : virtual s, virtual ICh {
-  virtual ~sd(){}
-// CHECK64: FieldDecl=q:[[@LINE+2]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offset=64]
-// CHECK32: FieldDecl=q:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offset=32]
-  int q;
-// CHECK64: FieldDecl=y:[[@LINE+2]]:8 (Definition) [type=char] [typekind=Char_S] [sizeof=1] [alignof=1] [offset=96]
-// CHECK32: FieldDecl=y:[[@LINE+1]]:8 (Definition) [type=char] [typekind=Char_S] [sizeof=1] [alignof=1] [offset=64]
-  char y;
-  virtual int asd() {return -1;}
-};
-
-// CHECK64: StructDecl=AV:[[@LINE+2]]:8 (Definition) [type=Test3::AV] [typekind=Record] [sizeof=8] [alignof=8]
-// CHECK32: StructDecl=AV:[[@LINE+1]]:8 (Definition) [type=Test3::AV] [typekind=Record] [sizeof=4] [alignof=4]
-struct AV { virtual void foo(); };
-// CHECK64: StructDecl=BV:[[@LINE+2]]:8 (Definition) [type=Test3::BV] [typekind=Record] [sizeof=8] [alignof=8]
-// CHECK32: StructDecl=BV:[[@LINE+1]]:8 (Definition) [type=Test3::BV] [typekind=Record] [sizeof=4] [alignof=4]
-struct BV : AV {};
-// CHECK64: StructDecl=CV:[[@LINE+2]]:8 (Definition) [type=Test3::CV] [typekind=Record] [sizeof=8] [alignof=8]
-// CHECK32: StructDecl=CV:[[@LINE+1]]:8 (Definition) [type=Test3::CV] [typekind=Record] [sizeof=4] [alignof=4]
-struct CV : virtual BV {
-  CV();
-  virtual void foo();
-};
-// CHECK64: StructDecl=DV:[[@LINE+2]]:8 (Definition) [type=Test3::DV] [typekind=Record] [sizeof=8] [alignof=8]
-// CHECK32: StructDecl=DV:[[@LINE+1]]:8 (Definition) [type=Test3::DV] [typekind=Record] [sizeof=4] [alignof=4]
-struct DV : BV {};
-// CHECK64: StructDecl=EV:[[@LINE+2]]:8 (Definition) [type=Test3::EV] [typekind=Record] [sizeof=16] [alignof=8]
-// CHECK32: StructDecl=EV:[[@LINE+1]]:8 (Definition) [type=Test3::EV] [typekind=Record] [sizeof=8] [alignof=4]
-struct EV : CV, DV {};
-
 }
 
 namespace CrashTest {
-
+// test crash scenarios on dependent types.
 template<typename T>
 struct Foo {
   T t;
@@ -341,9 +246,10 @@ void c;
 
 plopplop;
 
-// CHECK64: StructDecl=lastValid:[[@LINE+2]]:8 (Definition) [type=CrashTest::lastValid] [typekind=Record] [sizeof=8] [alignof=8]
-// CHECK32: StructDecl=lastValid:[[@LINE+1]]:8 (Definition) [type=CrashTest::lastValid] [typekind=Record] [sizeof=4] [alignof=4]
-struct lastValid;
+// CHECK64: StructDecl=lastValid:[[@LINE+2]]:8 (Definition) [type=CrashTest::lastValid] [typekind=Record] [sizeof=1] [alignof=1]
+// CHECK32: StructDecl=lastValid:[[@LINE+1]]:8 (Definition) [type=CrashTest::lastValid] [typekind=Record] [sizeof=1] [alignof=1]
+struct lastValid {
+};
 
 }
 

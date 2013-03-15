@@ -1174,12 +1174,18 @@ static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
     long long Offset = clang_getOffsetOf(clang_getCursorType(p), name);
     long long Offset1 = clang_getOffsetOfField(cursor);
     if (Offset >= 0) {
-      printf(" [offset=%lld]", Offset);
-      /* on error, error codes could be different. */
+      printf(" [offsetof=%lld]", Offset);
+      /* on error, error codes could be different. That is expected. */
       if (Offset != Offset1) {
         printf(" [offsets mismatch %lld!=%lld]", Offset, Offset1);
       }
     }
+  }
+  /* Print if its a bitfield */
+  {
+    int IsBitfield = clang_isBitField(cursor);
+    if (IsBitfield)
+      printf(" [isBitField=%d]", IsBitfield);
   }
   printf("\n");
   return CXChildVisit_Recurse;
