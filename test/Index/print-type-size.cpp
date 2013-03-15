@@ -331,11 +331,19 @@ namespace CrashTest {
 template<typename T>
 struct Foo {
   T t;
+  int a;
 };
+
+Foo<Sizes::A> t1;
+Foo<Sizes::I> t2;
 
 void c;
 
 plopplop;
+
+// CHECK64: StructDecl=lastValid:[[@LINE+2]]:8 (Definition) [type=CrashTest::lastValid] [typekind=Record] [sizeof=8] [alignof=8]
+// CHECK32: StructDecl=lastValid:[[@LINE+1]]:8 (Definition) [type=CrashTest::lastValid] [typekind=Record] [sizeof=4] [alignof=4]
+struct lastValid;
 
 }
 

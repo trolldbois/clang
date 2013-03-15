@@ -1175,9 +1175,10 @@ static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
     long long Offset1 = clang_getOffsetOfField(cursor);
     if (Offset >= 0) {
       printf(" [offset=%lld]", Offset);
-    }
-    if (Offset != Offset1) {
-      printf(" [offset mismatch %lld!=%lld]", Offset, Offset1);
+      /* on error, error codes could be different. */
+      if (Offset != Offset1) {
+        printf(" [offsets mismatch %lld!=%lld]", Offset, Offset1);
+      }
     }
   }
   printf("\n");

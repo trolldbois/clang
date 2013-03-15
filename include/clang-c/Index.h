@@ -2910,21 +2910,33 @@ enum CXTypeLayoutError {
    */
   CXTypeLayoutError_Invalid = -1,
   /**
-   * \brief QualType is incomplete Type.
+   * \brief The type is an incomplete Type.
    */
   CXTypeLayoutError_Incomplete = -2,
   /**
-   * \brief QualType is a dependent Type.
+   * \brief The type is a dependent Type.
    */
   CXTypeLayoutError_Dependent = -3,
   /**
-   * \brief QualType is not a constant size type.
+   * \brief The type is not a constant size type.
    */
   CXTypeLayoutError_NotConstantSize = -4,
   /**
    * \brief The Field name is not valid for this record.
    */
-  CXTypeLayoutError_InvalidFieldName = -5
+  CXTypeLayoutError_InvalidFieldName = -5,
+  /**
+   * \brief One field is an incomplete Type.
+   */
+  CXTypeLayoutError_IncompleteField = -6,
+  /**
+   * \brief One field is a dependent Type.
+   */
+  CXTypeLayoutError_DependentField = -7,
+  /**
+   * \brief One field is not a constant size type.
+   */
+  CXTypeLayoutError_NotConstantSizeField = -8
 };
 
 /**
