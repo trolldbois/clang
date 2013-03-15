@@ -654,7 +654,8 @@ long long clang_getAlignOf(CXType T) {
     return CXTypeLayoutError_Invalid;
   ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
   QualType QT = GetQualType(T);
-  // [expr.alignof] p1: return size_t value for complete object type, reference or array.
+  // [expr.alignof] p1: return size_t value for complete object type, reference 
+  //                    or array.
   // [expr.alignof] p3: if reference type, return size of referenced type
   if (QT->isReferenceType())
     QT = QT.getNonReferenceType();
@@ -688,7 +689,8 @@ long long clang_getSizeOf(CXType T) {
     return CXTypeLayoutError_Dependent;
   if (!QT->isConstantSizeType())
     return CXTypeLayoutError_NotConstantSize;
-  // [gcc extension] lib/AST/ExprConstant.cpp:1372 HandleSizeof : {voidtype,functype} == 1
+  // [gcc extension] lib/AST/ExprConstant.cpp:1372 
+  //                 HandleSizeof : {voidtype,functype} == 1
   // not handled by ASTContext.cpp:1313 getTypeInfoImpl
   if (QT->isVoidType() || QT->isFunctionType())
     return 1;
@@ -700,17 +702,20 @@ long long clang_getOffsetOf(CXType T, CXString S) {
   CXCursor PC = clang_getTypeDeclaration(T);
   if (clang_isInvalid(PC.kind))
     return CXTypeLayoutError_Invalid;
-  const RecordDecl *RD = dyn_cast_or_null<RecordDecl>(cxcursor::getCursorDecl(PC));
+  const RecordDecl *RD = 
+        dyn_cast_or_null<RecordDecl>(cxcursor::getCursorDecl(PC));
   if (!RD)
     return CXTypeLayoutError_Invalid;
-  RD = RD->getDefinition()
+  RD = RD->getDefinition();
   if (!RD)
     return CXTypeLayoutError_Incomplete;
   // iterate the fields to get the matching name
+  StringRef fieldname = StringRef(clang_getCString(S));
   ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
   for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
        I != E; ++I) {
-    if ((*I)->getDeclSpelling() == S)
+    
+    if ( fieldname == (*I)->getName())
       return Ctx.getFieldOffset((*I));
   }
   return CXTypeLayoutError_InvalidFieldName;
@@ -735,7 +740,7 @@ long long clang_getOffsetOfField(CXCursor C) {
   return Ctx.getFieldOffset(FD);
 }
 
-unsigned clang_isBitfield(CXCursor C) {
+unsigned clang_isBitField(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
     return 0;
   const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(cxcursor::getCursorDecl(C));
