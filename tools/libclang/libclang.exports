@@ -185,6 +185,7 @@ clang_getNumDiagnostics
 clang_getNumDiagnosticsInSet
 clang_getNumElements
 clang_getNumOverloadedDecls
+clang_getOffsetOf
 clang_getOverloadedDecl
 clang_getOverriddenCursors
 clang_getPointeeType
@@ -192,7 +193,6 @@ clang_getPresumedLocation
 clang_getRange
 clang_getRangeEnd
 clang_getRangeStart
-clang_getRecordFieldOffsetInBits
 clang_getRemappings
 clang_getRemappingsFromFileList
 clang_getResultType
@@ -230,6 +230,7 @@ clang_index_isEntityObjCContainerKind
 clang_index_setClientContainer
 clang_index_setClientEntity
 clang_isAttribute
+clang_isBitField
 clang_isConstQualifiedType
 clang_isCursorDefinition
 clang_isDeclaration

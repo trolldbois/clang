@@ -2899,29 +2899,75 @@ CINDEX_LINKAGE CXType clang_getArrayElementType(CXType T);
 CINDEX_LINKAGE long long clang_getArraySize(CXType T);
 
 /**
- * \brief Return the alignment of a type in bytes as per C++[expr.alignof] standard.
+ * \brief List the possible error codes for getTypeSizeOf and getTypeAlignOf.
  *
- * If the type declaration is invalid, -1 is returned.
- * If the type declaration is incomplete or a dependent type, -2 is returned.
+ * A value of this enumeration type can be returned if the target type is not
+ * \c a valid argument to sizeof or alignof.
+ */
+enum CXTypeLayoutError {
+  /**
+   * \brief Type is of kind CXType_Invalid.
+   */
+  CXTypeLayoutError_Invalid = -1,
+  /**
+   * \brief QualType is incomplete Type.
+   */
+  CXTypeLayoutError_Incomplete = -2,
+  /**
+   * \brief QualType is a dependent Type.
+   */
+  CXTypeLayoutError_Dependent = -3,
+  /**
+   * \brief QualType is not a constant size type.
+   */
+  CXTypeLayoutError_NotConstantSize = -4
+};
+
+/**
+ * \brief Return the alignment of a type in bytes as per C++[expr.alignof] 
+ *   standard.
+ *
+ * If the type declaration is invalid, CXTypeLayoutError_Invalid is returned.
+ * If the type declaration is an incomplete type, CXTypeLayoutError_Incomplete 
+ *   is returned.
+ * If the type declaration is a dependent type, CXTypeLayoutError_Dependent is 
+ *   returned.
+ * If the type declaration is not a constant size type, 
+ *   CXTypeLayoutError_NotConstantSize is returned.
  */
 CINDEX_LINKAGE long long clang_getTypeAlignOf(CXType T);
 
 /**
  * \brief Return the size of a type in bytes as per C++[expr.sizeof] standard.
  *
- * If the type declaration is invalid, -1 is returned.
- * If the type declaration is incomplete, a dependent type or non constant size, -2 is returned.
+ * If the type declaration is invalid, CXTypeLayoutError_Invalid is returned.
+ * If the type declaration is an incomplete type, CXTypeLayoutError_Incomplete 
+ *   is returned.
+ * If the type declaration is a dependent type, CXTypeLayoutError_Dependent is 
+ *   returned.
  */
 CINDEX_LINKAGE long long clang_getTypeSizeOf(CXType T);
 
 /**
- * \brief Return the offset of a field in a record in bits as returned by the AST Record Layout.
+ * \brief Return the offset of a field in a record in bits as returned by the 
+ *   AST Record Layout.
  *
- * If the cursor is not a record field declaration, -1 is returned.
- * If the field type declaration is incomplete, a dependent type or non constant size, -2 is returned.
+ * If the cursor is not a record field declaration, CXTypeLayoutError_Invalid 
+ *   is returned.
+ * If the type declaration is an incomplete type, CXTypeLayoutError_Incomplete 
+ *   is returned.
+ * If the type declaration is a dependent type, CXTypeLayoutError_Dependent is 
+ *   returned.
+ * If the type declaration is not a constant size type, 
+ *   CXTypeLayoutError_NotConstantSize is returned.
  */
-CINDEX_LINKAGE long long clang_getRecordFieldOffsetInBits(CXCursor C);
+CINDEX_LINKAGE long long clang_getOffsetOf(CXCursor C);
 
+/**
+ * \brief Returns 1 if the cursor specifies a Record member that is a bitfield.
+ */
+CINDEX_LINKAGE unsigned clang_isBitField(CXCursor C);
+    
 /**
  * \brief Returns 1 if the base class specified by the cursor with kind
  *   CX_CXXBaseSpecifier is virtual.

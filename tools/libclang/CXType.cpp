@@ -652,55 +652,83 @@ long long clang_getArraySize(CXType CT) {
 
 long long clang_getTypeAlignOf(CXType T) {
   if (T.kind == CXType_Invalid)
-      return -1;
+    return CXTypeLayoutError_Invalid;
   ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
   QualType QT = GetQualType(T);
   // [expr.alignof] p1: return size_t value for complete object type, reference or array.
   // [expr.alignof] p3: if reference type, return size of referenced type
   if (QT->isReferenceType())
     QT = QT.getNonReferenceType();
-  if (QT->isIncompleteType() || QT->isDependentType())
-    return -2;
+  if (QT->isIncompleteType())
+    return CXTypeLayoutError_Incomplete;
+  if (QT->isDependentType())
+    return CXTypeLayoutError_Dependent;
   // Exceptions by GCC extension - see ASTContext.cpp:1313 getTypeInfoImpl
-  // if (QT->isFunctionType()) return 4;
+  // if (QT->isFunctionType()) return 4; // Bug #15511
   // if (QT->isVoidType()) return 1;
   return Ctx.getTypeAlignInChars(QT).getQuantity();
 }
 
 long long clang_getTypeSizeOf(CXType T) {
   if (T.kind == CXType_Invalid)
-      return -1;
+    return CXTypeLayoutError_Invalid;
   ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
   QualType QT = GetQualType(T);
   // [expr.sizeof] p2: if reference type, return size of referenced type
   if (QT->isReferenceType())
     QT = QT.getNonReferenceType();
-  // [expr.sizeof] p1: return -1 on: func, incomplete, bitfield, incomplete enumeration
+  // [expr.sizeof] p1: return -1 on: func, incomplete, bitfield, incomplete 
+  //                   enumeration
+  // Note: We get the cxtype, not the cxcursor, so we can't call 
+  //       FieldDecl->isBitField()
   // [expr.sizeof] p3: pointer ok, function not ok.
   // [gcc extension] lib/AST/ExprConstant.cpp:1372 HandleSizeof : vla == error
-  if (QT->isIncompleteType() || QT->isDependentType() || !QT->isConstantSizeType())
-    return -2;
+  if (QT->isIncompleteType())
+    return CXTypeLayoutError_Incomplete;
+  if (QT->isDependentType())
+    return CXTypeLayoutError_Dependent;
+  if (!QT->isConstantSizeType())
+    return CXTypeLayoutError_NotConstantSize;
   // [gcc extension] lib/AST/ExprConstant.cpp:1372 HandleSizeof : {voidtype,functype} == 1
   // not handled by ASTContext.cpp:1313 getTypeInfoImpl
-  if (QT->isVoidType() || QT->isFunctionType())
-    return 1;
+  // FIXME TEST Should be 1 already
+  // if (QT->isVoidType() || QT->isFunctionType())
+  //  return 1;
   return Ctx.getTypeSizeInChars(QT).getQuantity();
 }
 
-long long clang_getRecordFieldOffsetInBits(CXCursor C) {
+long long clang_getOffsetOf(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
-    return -1;
+    return CXTypeLayoutError_Invalid;
   const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(cxcursor::getCursorDecl(C));
   if (!FD)
-    return -1;
+    return CXTypeLayoutError_Invalid;
   QualType QT = GetQualType(clang_getCursorType(C));
-  if (QT->isIncompleteType() || QT->isDependentType() || !QT->isConstantSizeType())
-    return -2;
+  if (QT->isIncompleteType())
+    return CXTypeLayoutError_Incomplete;
+  if (QT->isDependentType())
+    return CXTypeLayoutError_Dependent;
+  if (!QT->isConstantSizeType())
+    return CXTypeLayoutError_NotConstantSize;
   ASTContext &Ctx = cxcursor::getCursorContext(C);
   unsigned FieldNo = FD->getFieldIndex();
   const ASTRecordLayout &Layout = Ctx.getASTRecordLayout(FD->getParent());
   return Layout.getFieldOffset(FieldNo);
 }
+
+unsigned clang_isBitfield(CXCursor C) {
+  if (!clang_isDeclaration(C.kind))
+    return 0;
+  const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(cxcursor::getCursorDecl(C));
+  if (!FD)
+    return 0;
+  return FD->isBitField();
+}
+
+long long clang_getOffsetOf(CXType T, CXString C) {
+//???
+}
+
 
 CXString clang_getDeclObjCTypeEncoding(CXCursor C) {
   if (!clang_isDeclaration(C.kind))

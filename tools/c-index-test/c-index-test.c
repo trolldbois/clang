@@ -1145,35 +1145,36 @@ static enum CXChildVisitResult PrintType(CXCursor cursor, CXCursor p,
 }
 
 static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
-                                         CXClientData d) {
-  if (!clang_isInvalid(clang_getCursorKind(cursor))) {
-    CXType T = clang_getCursorType(cursor);
-    PrintCursor(cursor, NULL);
-    PrintTypeAndTypeKind(T, " [type=%s] [typekind=%s]");
-    /* Print the type sizeof if applicable. */
-    {
-      long long Size = clang_getTypeSizeOf(T);
-      if (Size >= 0) {
-        printf(" [sizeof=%lld]", Size);
-      }
+                                             CXClientData d) {
+  CXType T;
+  enum CXCursorKind K = clang_getCursorKind(cursor);
+  if (clang_isInvalid(K))
+    return CXChildVisit_Recurse;
+  T = clang_getCursorType(cursor);
+  PrintCursor(cursor, NULL);
+  PrintTypeAndTypeKind(T, " [type=%s] [typekind=%s]");
+  /* Print the type sizeof if applicable. */
+  {
+    long long Size = clang_getTypeSizeOf(T);
+    if (Size >= 0) {
+      printf(" [sizeof=%lld]", Size);
     }
-    /* Print the type alignof if applicable. */
-    {
-      long long Align = clang_getTypeAlignOf(T);
-      if (Align >= 0) {
-        printf(" [alignof=%lld]", Align);
-      }
-    }
-    /* Print the record field offset if applicable. */
-    {
-      long long Offset = clang_getRecordFieldOffsetInBits(cursor);
-      if (Offset >= 0) {
-        printf(" [offset=%lld]", Offset);
-      }
-    }
-
-    printf("\n");
   }
+  /* Print the type alignof if applicable. */
+  {
+    long long Align = clang_getTypeAlignOf(T);
+    if (Align >= 0) {
+      printf(" [alignof=%lld]", Align);
+    }
+  }
+  /* Print the record field offset if applicable. */
+  {
+    long long Offset = clang_getOffsetOf(cursor);
+    if (Offset >= 0) {
+      printf(" [offset=%lld]", Offset);
+    }
+  }
+  printf("\n");
   return CXChildVisit_Recurse;
 }
 
