@@ -2051,7 +2051,7 @@ class TranslationUnit(ClangObject):
                                     len(args), unsaved_array,
                                     len(unsaved_files), options)
 
-        if ptr is None:
+        if not ptr:
             raise TranslationUnitLoadError("Error parsing translation unit.")
 
         return cls(ptr, index=index)
@@ -2073,7 +2073,7 @@ class TranslationUnit(ClangObject):
             index = Index.create()
 
         ptr = conf.lib.clang_createTranslationUnit(index, filename)
-        if ptr is None:
+        if not ptr:
             raise TranslationUnitLoadError(filename)
 
         return cls(ptr=ptr, index=index)

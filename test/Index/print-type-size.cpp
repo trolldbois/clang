@@ -12,7 +12,7 @@ void v;
 // CHECK32: VarDecl=v1:[[@LINE+1]]:7 (Definition) [type=void *] [typekind=Pointer] [sizeof=4] [alignof=4]
 void *v1;
 
-// offsetof 
+// offsetof
 // CHECK64: StructDecl=simple:[[@LINE+2]]:8 (Definition) [type=basic::simple] [typekind=Record] [sizeof=48] [alignof=8]
 // CHECK32: StructDecl=simple:[[@LINE+1]]:8 (Definition) [type=basic::simple] [typekind=Record] [sizeof=36] [alignof=4]
 struct simple {

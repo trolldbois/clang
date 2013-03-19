@@ -155,6 +155,8 @@ CXType clang_getCursorType(CXCursor C) {
       return MakeCXType(PD->getType(), TU);
     if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
       return MakeCXType(FD->getType(), TU);
+    if (const FunctionTemplateDecl *FTD = dyn_cast<FunctionTemplateDecl>(D))
+      return MakeCXType(FTD->getTemplatedDecl()->getType(), TU);
     return MakeCXType(QualType(), TU);
   }
   
@@ -654,7 +656,7 @@ long long clang_getAlignOf(CXType T) {
     return CXTypeLayoutError_Invalid;
   ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
   QualType QT = GetQualType(T);
-  // [expr.alignof] p1: return size_t value for complete object type, reference 
+  // [expr.alignof] p1: return size_t value for complete object type, reference
   //                    or array.
   // [expr.alignof] p3: if reference type, return size of referenced type
   if (QT->isReferenceType())
@@ -677,9 +679,9 @@ long long clang_getSizeOf(CXType T) {
   // [expr.sizeof] p2: if reference type, return size of referenced type
   if (QT->isReferenceType())
     QT = QT.getNonReferenceType();
-  // [expr.sizeof] p1: return -1 on: func, incomplete, bitfield, incomplete 
+  // [expr.sizeof] p1: return -1 on: func, incomplete, bitfield, incomplete
   //                   enumeration
-  // Note: We get the cxtype, not the cxcursor, so we can't call 
+  // Note: We get the cxtype, not the cxcursor, so we can't call
   //       FieldDecl->isBitField()
   // [expr.sizeof] p3: pointer ok, function not ok.
   // [gcc extension] lib/AST/ExprConstant.cpp:1372 HandleSizeof : vla == error
@@ -689,7 +691,7 @@ long long clang_getSizeOf(CXType T) {
     return CXTypeLayoutError_Dependent;
   if (!QT->isConstantSizeType())
     return CXTypeLayoutError_NotConstantSize;
-  // [gcc extension] lib/AST/ExprConstant.cpp:1372 
+  // [gcc extension] lib/AST/ExprConstant.cpp:1372
   //                 HandleSizeof : {voidtype,functype} == 1
   // not handled by ASTContext.cpp:1313 getTypeInfoImpl
   if (QT->isVoidType() || QT->isFunctionType())
@@ -701,19 +703,19 @@ long long getOffsetOfFieldDecl(const FieldDecl * FD) {
   if (!FD)
     return CXTypeLayoutError_Invalid;
   // we need to validate the QualType before calling Ctx.getFieldOffset
-  QualType QT = FD->getType(); 
+  QualType QT = FD->getType();
   if (QT->isIncompleteType())
     return CXTypeLayoutError_Incomplete;
-  if (QT->isDependentType()) 
+  if (QT->isDependentType())
     return CXTypeLayoutError_Dependent;
   if (!QT->isConstantSizeType())
     return CXTypeLayoutError_NotConstantSize;
   // we also need to validate the parent type for dependent fields
   ASTContext &Ctx = FD->getASTContext();
-  QualType PQT = Ctx.getRecordType(FD->getParent()); 
+  QualType PQT = Ctx.getRecordType(FD->getParent());
   if (PQT->isIncompleteType())
     return CXTypeLayoutError_IncompleteField;
-  if (PQT->isDependentType()) 
+  if (PQT->isDependentType())
     return CXTypeLayoutError_DependentField;
   if (!PQT->isConstantSizeType())
     return CXTypeLayoutError_NotConstantSizeField;
@@ -725,7 +727,7 @@ long long clang_getOffsetOf(CXType PT, const char* S) {
   CXCursor PC = clang_getTypeDeclaration(PT);
   if (clang_isInvalid(PC.kind))
     return CXTypeLayoutError_Invalid;
-  const RecordDecl *RD = 
+  const RecordDecl *RD =
         dyn_cast_or_null<RecordDecl>(cxcursor::getCursorDecl(PC));
   if (!RD)
     return CXTypeLayoutError_Invalid;

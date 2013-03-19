@@ -320,8 +320,7 @@ struct a {
         tu = get_tu(source, flags=flags)
         teststruct = get_cursor(tu, 'a')
         fields = list(teststruct.get_children())
-        #import code
-        #code.interact(local=locals())        
+
         assert teststruct.type.get_align() == align
         assert teststruct.type.get_size() == total
         assert fields[0].get_record_field_offset() == teststruct.type.get_offset(fields[0].spelling) == a1

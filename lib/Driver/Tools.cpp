@@ -1414,21 +1414,13 @@ static void addExceptionArgs(const ArgList &Args, types::ID InputType,
     CmdArgs.push_back("-fexceptions");
 }
 
-/// \brief Check if the toolchain should use the integrated assembler.
-static bool ShouldUseIntegratedAssembler(const ArgList &Args,
-                                         const ToolChain &TC) {
-  return Args.hasFlag(options::OPT_integrated_as,
-                      options::OPT_no_integrated_as,
-                      TC.IsIntegratedAssemblerDefault());
-}
-
 static bool ShouldDisableCFI(const ArgList &Args,
                              const ToolChain &TC) {
   bool Default = true;
   if (TC.getTriple().isOSDarwin()) {
     // The native darwin assembler doesn't support cfi directives, so
     // we disable them if we think the .s file will be passed to it.
-    Default = ShouldUseIntegratedAssembler(Args, TC);
+    Default = TC.useIntegratedAs();
   }
   return !Args.hasFlag(options::OPT_fdwarf2_cfi_asm,
                        options::OPT_fno_dwarf2_cfi_asm,
@@ -1439,7 +1431,7 @@ static bool ShouldDisableDwarfDirectory(const ArgList &Args,
                                         const ToolChain &TC) {
   bool UseDwarfDirectory = Args.hasFlag(options::OPT_fdwarf_directory_asm,
                                         options::OPT_fno_dwarf_directory_asm,
-                                        ShouldUseIntegratedAssembler(Args, TC));
+                                        TC.useIntegratedAs());
   return !UseDwarfDirectory;
 }
 
@@ -1483,8 +1475,6 @@ SanitizerArgs::SanitizerArgs(const Driver &D, const ArgList &Args)
       AsanZeroBaseShadow(false) {
   unsigned AllKinds = 0;  // All kinds of sanitizers that were turned on
                           // at least once (possibly, disabled further).
-  unsigned AllRemovedKinds = 0;  // All kinds of sanitizers that were explicitly
-                                 // removed at least once.
   for (ArgList::const_iterator I = Args.begin(), E = Args.end(); I != E; ++I) {
     unsigned Add, Remove;
     if (!parse(D, Args, *I, Add, Remove, true))
@@ -1493,12 +1483,6 @@ SanitizerArgs::SanitizerArgs(const Driver &D, const ArgList &Args)
     Kind |= Add;
     Kind &= ~Remove;
     AllKinds |= Add;
-    AllRemovedKinds |= Remove;
-  }
-  // Assume -fsanitize=address implies -fsanitize=init-order, if the latter is
-  // not disabled explicitly.
-  if ((Kind & Address) != 0 && (AllRemovedKinds & InitOrder) == 0) {
-    Kind |= InitOrder;
   }
 
   UbsanTrapOnError =
@@ -1785,8 +1769,12 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   } else if (isa<PreprocessJobAction>(JA)) {
     if (Output.getType() == types::TY_Dependencies)
       CmdArgs.push_back("-Eonly");
-    else
+    else {
       CmdArgs.push_back("-E");
+      if (Args.hasArg(options::OPT_rewrite_objc) &&
+          !Args.hasArg(options::OPT_g_Group))
+        CmdArgs.push_back("-P");
+    }
   } else if (isa<AssembleJobAction>(JA)) {
     CmdArgs.push_back("-emit-obj");
 
@@ -2814,7 +2802,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // -fmodules-autolink (on by default when modules is enabled) automatically
   // links against libraries for imported modules.  This requires the
   // integrated assembler.
-  if (HaveModules && ShouldUseIntegratedAssembler(Args, getToolChain()) &&
+  if (HaveModules && getToolChain().useIntegratedAs() &&
       Args.hasFlag(options::OPT_fmodules_autolink,
                    options::OPT_fno_modules_autolink,
                    true)) {
@@ -5216,6 +5204,7 @@ void freebsd::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
     switch(getToolChain().getTriple().getEnvironment()) {
     case llvm::Triple::GNUEABI:
     case llvm::Triple::EABI:
+      CmdArgs.push_back("-meabi=5");
       break;
 
     default:
