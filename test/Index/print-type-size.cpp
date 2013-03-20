@@ -54,7 +54,18 @@ simple s1;
 namespace Incomplete {
 // expect compilation error, not crash.
 union f {
+//CHECK64: FieldDecl=f1:[[@LINE+1]]:23 (Definition) [type=struct forward_decl] [typekind=Unexposed] [offsetof=-2]
   struct forward_decl f1;
+//CHECK64: FieldDecl=f2:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=-6]
+  int f2;
+//CHECK64: [sizeof=8] [alignof=4]
+  struct {
+    int e1;
+    struct {
+      struct forward_decl2 g1;
+    };
+    int e3;
+  } f3;
 };
 
 // CHECK64: StructDecl=As:[[@LINE+1]]:8 [type=Incomplete::As] [typekind=Record]
@@ -231,11 +242,32 @@ struct BaseStruct
 
 }
 
+namespace NotConstantSize {
+
+void f(int i) {
+// CHECK32: VarDecl=v2:[[@LINE+1]]:8 (Definition) [type=int [i]] [typekind=Unexposed] [alignof=4]
+   int v2[i];
+   {
+   struct CS1 {
+//CHECK32: FieldDecl=f1:[[@LINE+1]]:9 (Definition) [type=int [i]] [typekind=Unexposed] [alignof=4] [offsetof=-4]
+    int f1[i];
+//FIXME: clang says [offsetof=0]
+//CHECK32: FieldDecl=f2:[[@LINE+1]]:11 (Definition) [type=float] [typekind=Float] [sizeof=4] [alignof=4] [offsetof=-8]
+    float f2;
+   };
+   
+   }
+}
+
+}
+
 namespace CrashTest {
 // test crash scenarios on dependent types.
 template<typename T>
 struct Foo {
+//CHECK32: FieldDecl=t:[[@LINE+1]]:5 (Definition) [type=T] [typekind=Unexposed] [offsetof=-1] [offsets mismatch -1!=-3]
   T t;
+//CHECK32: FieldDecl=a:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=-1] [offsets mismatch -1!=-7]
   int a;
 };
 

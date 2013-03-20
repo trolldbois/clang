@@ -1155,14 +1155,14 @@ static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
   PrintTypeAndTypeKind(T, " [type=%s] [typekind=%s]");
   /* Print the type sizeof if applicable. */
   {
-    long long Size = clang_getSizeOf(T);
+    long long Size = clang_Type_getSizeOf(T);
     if (Size >= 0) {
       printf(" [sizeof=%lld]", Size);
     }
   }
   /* Print the type alignof if applicable. */
   {
-    long long Align = clang_getAlignOf(T);
+    long long Align = clang_Type_getAlignOf(T);
     if (Align >= 0) {
       printf(" [alignof=%lld]", Align);
     }
@@ -1171,9 +1171,9 @@ static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
   {
     const char *name = clang_getCString(clang_getCursorSpelling(cursor));
     /* Both function have the same code base  */
-    long long Offset = clang_getOffsetOf(clang_getCursorType(p), name);
-    long long Offset1 = clang_getOffsetOfField(cursor);
-    if (Offset >= 0) {
+    long long Offset = clang_Type_getOffsetOf(clang_getCursorType(p), name);
+    long long Offset1 = clang_Cursor_getOffsetOf(cursor);
+    if (clang_getCursorKind(cursor) == CXCursor_FieldDecl ) { 
       printf(" [offsetof=%lld]", Offset);
       /* on error, error codes could be different. That is expected. */
       if (Offset != Offset1) {
@@ -1183,7 +1183,7 @@ static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
   }
   /* Print if its a bitfield */
   {
-    int IsBitfield = clang_isBitField(cursor);
+    int IsBitfield = clang_Cursor_isBitField(cursor);
     if (IsBitfield)
       printf(" [BitFieldSize=%d]", clang_getFieldDeclBitWidth(cursor));
   }

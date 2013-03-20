@@ -651,7 +651,7 @@ long long clang_getArraySize(CXType CT) {
   return result;
 }
 
-long long clang_getAlignOf(CXType T) {
+long long clang_Type_getAlignOf(CXType T) {
   if (T.kind == CXType_Invalid)
     return CXTypeLayoutError_Invalid;
   ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
@@ -671,7 +671,7 @@ long long clang_getAlignOf(CXType T) {
   return Ctx.getTypeAlignInChars(QT).getQuantity();
 }
 
-long long clang_getSizeOf(CXType T) {
+long long clang_Type_getSizeOf(CXType T) {
   if (T.kind == CXType_Invalid)
     return CXTypeLayoutError_Invalid;
   ASTContext &Ctx = cxtu::getASTUnit(GetTU(T))->getASTContext();
@@ -699,30 +699,45 @@ long long clang_getSizeOf(CXType T) {
   return Ctx.getTypeSizeInChars(QT).getQuantity();
 }
 
-long long getOffsetOfFieldDecl(const FieldDecl * FD) {
+static long long getOffsetOfFieldDecl(const FieldDecl * FD) {
   if (!FD)
     return CXTypeLayoutError_Invalid;
-  // we need to validate the QualType before calling Ctx.getFieldOffset
+  // we need to validate the Field's QualType before calling Ctx.getFieldOffset
   QualType QT = FD->getType();
   if (QT->isIncompleteType())
     return CXTypeLayoutError_Incomplete;
   if (QT->isDependentType())
     return CXTypeLayoutError_Dependent;
-  if (!QT->isConstantSizeType())
-    return CXTypeLayoutError_NotConstantSize;
-  // we also need to validate the parent type for dependent fields
+  //if (!QT->isConstantSizeType()) // FIXME: test needed
+  //  return CXTypeLayoutError_NotConstantSize;
+  // we also need to validate the parent record type, in case another field in 
+  // the record in incorrect, thereby making the record non suitable.
   ASTContext &Ctx = FD->getASTContext();
   QualType PQT = Ctx.getRecordType(FD->getParent());
   if (PQT->isIncompleteType())
     return CXTypeLayoutError_IncompleteField;
   if (PQT->isDependentType())
     return CXTypeLayoutError_DependentField;
-  if (!PQT->isConstantSizeType())
-    return CXTypeLayoutError_NotConstantSizeField;
+  //if (!PQT->isConstantSizeType()) // FIXME: test needed
+  //  return CXTypeLayoutError_NotConstantSizeField;
+
+  const RecordDecl * PD = FD->getParent();
+  for (RecordDecl::field_iterator I = PD->field_begin(), E = PD->field_end();
+       I != E; ++I) {
+      QualType MQT = (*I)->getType();
+      if (MQT->isIncompleteType())
+        return CXTypeLayoutError_IncompleteField;
+      if (MQT->isDependentType())
+        return CXTypeLayoutError_DependentField;
+      //if (!MQT->isConstantSizeType()) // FIXME: test needed
+      //  return CXTypeLayoutError_NotConstantSizeField;
+  }
+
+
   return Ctx.getFieldOffset(FD);
 }
 
-long long clang_getOffsetOf(CXType PT, const char* S) {
+long long clang_Type_getOffsetOf(CXType PT, const char* S) {
   // get the parent record type declaration
   CXCursor PC = clang_getTypeDeclaration(PT);
   if (clang_isInvalid(PC.kind))
@@ -735,7 +750,7 @@ long long clang_getOffsetOf(CXType PT, const char* S) {
   if (!RD)
     return CXTypeLayoutError_Incomplete;
   // iterate the fields to get the matching name
-  StringRef fieldname = StringRef(clang_getCString(cxstring::createRef(S)));
+  StringRef fieldname = StringRef(S);
   for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
        I != E; ++I) {
     if ( fieldname == (*I)->getName())
@@ -744,14 +759,14 @@ long long clang_getOffsetOf(CXType PT, const char* S) {
   return CXTypeLayoutError_InvalidFieldName; // FieldDecl is Null
 }
 
-long long clang_getOffsetOfField(CXCursor C) {
+long long clang_Cursor_getOffsetOf(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
     return CXTypeLayoutError_Invalid;
   const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(cxcursor::getCursorDecl(C));
   return getOffsetOfFieldDecl(FD);
 }
 
-unsigned clang_isBitField(CXCursor C) {
+unsigned clang_Cursor_isBitField(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
     return 0;
   const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(cxcursor::getCursorDecl(C));

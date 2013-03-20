@@ -11,9 +11,11 @@ clang_Cursor_getParsedComment
 clang_Cursor_getRawCommentText
 clang_Cursor_getNumArguments
 clang_Cursor_getObjCSelectorIndex
+clang_Cursor_getOffsetOf
 clang_Cursor_getSpellingNameRange
 clang_Cursor_getTranslationUnit
 clang_Cursor_getReceiverType
+clang_Cursor_isBitField
 clang_Cursor_isDynamicCall
 clang_Cursor_isNull
 clang_Cursor_getModule
@@ -53,6 +55,9 @@ clang_TParamCommandComment_getParamName
 clang_TParamCommandComment_isParamPositionValid
 clang_TParamCommandComment_getDepth
 clang_TParamCommandComment_getIndex
+clang_Type_getAlignOf
+clang_Type_getSizeOf
+clang_Type_getOffsetOf
 clang_VerbatimBlockLineComment_getText
 clang_VerbatimLineComment_getText
 clang_HTMLTagComment_getAsString
@@ -103,7 +108,6 @@ clang_findIncludesInFileWithBlock
 clang_findReferencesInFile
 clang_findReferencesInFileWithBlock
 clang_formatDiagnostic
-clang_getAlignOf
 clang_getArgType
 clang_getArrayElementType
 clang_getArraySize
@@ -186,8 +190,6 @@ clang_getNumDiagnostics
 clang_getNumDiagnosticsInSet
 clang_getNumElements
 clang_getNumOverloadedDecls
-clang_getOffsetOf
-clang_getOffsetOfField
 clang_getOverloadedDecl
 clang_getOverriddenCursors
 clang_getPointeeType
@@ -198,7 +200,6 @@ clang_getRangeStart
 clang_getRemappings
 clang_getRemappingsFromFileList
 clang_getResultType
-clang_getSizeOf
 clang_getSpecializedCursorTemplate
 clang_getSpellingLocation
 clang_getTUResourceUsageName
@@ -231,7 +232,6 @@ clang_index_isEntityObjCContainerKind
 clang_index_setClientContainer
 clang_index_setClientEntity
 clang_isAttribute
-clang_isBitField
 clang_isConstQualifiedType
 clang_isCursorDefinition
 clang_isDeclaration

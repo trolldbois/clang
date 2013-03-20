@@ -1318,13 +1318,13 @@ class Cursor(Structure):
         """
         Retrieve the offset of a field in his record, in number of bits.
         """
-        return conf.lib.clang_getOffsetOfField(self)
+        return conf.lib.clang_Cursor_getOffsetOf(self)
 
     def is_bitfield(self):
         """
         Check if the field is a bitfield.
         """
-        return conf.lib.clang_isBitField(self)
+        return conf.lib.clang_Cursor_isBitField(self)
 
     def get_bitfield_width(self):
         """
@@ -1635,19 +1635,19 @@ class Type(Structure):
         """
         Retrieve the alignment of the record.
         """
-        return conf.lib.clang_getAlignOf(self)
+        return conf.lib.clang_Type_getAlignOf(self)
 
     def get_size(self):
         """
         Retrieve the size of the record.
         """
-        return conf.lib.clang_getSizeOf(self)
+        return conf.lib.clang_Type_getSizeOf(self)
 
     def get_offset(self, fieldname):
         """
         Retrieve the offset of a field in the record.
         """
-        return conf.lib.clang_getOffsetOf(self, c_char_p(fieldname))
+        return conf.lib.clang_Type_getOffsetOf(self, c_char_p(fieldname))
 
     def __eq__(self, other):
         if type(other) != type(self):
@@ -2645,10 +2645,6 @@ functionList = [
    [Type, Type],
    bool),
 
-  ("clang_getAlignOf",
-   [Type],
-   c_longlong),
-
   ("clang_getArgType",
    [Type, c_uint],
    Type,
@@ -2901,14 +2897,6 @@ functionList = [
    [Cursor],
    c_uint),
 
-  ("clang_getOffsetOf",
-   [Type, c_char_p],
-   c_longlong),
-
-  ("clang_getOffsetOfField",
-   [Cursor],
-   c_longlong),
-
   ("clang_getOverloadedDecl",
    [Cursor, c_uint],
    Cursor,
@@ -2935,10 +2923,6 @@ functionList = [
    [Type],
    Type,
    Type.from_result),
-
-  ("clang_getSizeOf",
-   [Type],
-   c_ulonglong),
 
   ("clang_getSpecializedCursorTemplate",
    [Cursor],
@@ -3001,10 +2985,6 @@ functionList = [
 
   ("clang_isAttribute",
    [CursorKind],
-   bool),
-
-  ("clang_isBitField",
-   [Cursor],
    bool),
 
   ("clang_isConstQualifiedType",
@@ -3098,6 +3078,26 @@ functionList = [
    [Cursor, c_uint],
    Cursor,
    Cursor.from_result),
+
+  ("clang_Cursor_getOffsetOf",
+   [Cursor],
+   c_longlong),
+
+  ("clang_Cursor_isBitField",
+   [Cursor],
+   c_long),
+
+  ("clang_Type_getAlignOf",
+   [Type],
+   c_longlong),
+
+  ("clang_Type_getOffsetOf",
+   [Type, c_char_p],
+   c_longlong),
+
+  ("clang_Type_getSizeOf",
+   [Type],
+   c_ulonglong),
 ]
 
 class LibclangError(Exception):
