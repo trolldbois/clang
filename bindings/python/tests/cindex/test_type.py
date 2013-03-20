@@ -334,4 +334,21 @@ struct a {
         assert fields[2].get_bitfield_width() == 4
         assert fields[3].is_bitfield() == False
 
+def test_offset():
+    """Ensure Cursor.get_record_field_offset works in anonymous structs/union."""
+    source="""
+struct Test {
+  struct {
+    union {
+      int foo;
+    };
+  };
+};"""
+    tu = get_tu(source)
+    teststruct = get_cursor(tu, 'Test')
+    fields = list(teststruct.get_children())
+    import code
+    code.interact(local=locals())
+    assert fields[0].get_record_field_offset() == teststruct.type.get_offset("foo") == a1
+
 

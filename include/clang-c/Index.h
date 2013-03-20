@@ -2930,15 +2930,11 @@ enum CXTypeLayoutError {
   /**
    * \brief One field in the record is an incomplete Type.
    */
-  CXTypeLayoutError_IncompleteField = -6,
+  CXTypeLayoutError_IncompleteFieldParent = -6,
   /**
    * \brief One field in the record is a dependent Type.
    */
-  CXTypeLayoutError_DependentField = -7,
-  /**
-   * \brief One field in the record is not a constant size type.
-   */
-  CXTypeLayoutError_NotConstantSizeField = -8
+  CXTypeLayoutError_DependentFieldParent = -7
 };
 
 /**
@@ -2968,7 +2964,7 @@ CINDEX_LINKAGE long long clang_Type_getSizeOf(CXType T);
 
 /**
  * \brief Return the offset of a field named S in a record of type T in bits
- *   as it would be returned by __offsetof__
+ *   as it would be returned by __offsetof__.
  *
  * If the cursor is not a record field declaration, CXTypeLayoutError_Invalid
  *   is returned.
@@ -2979,17 +2975,15 @@ CINDEX_LINKAGE long long clang_Type_getSizeOf(CXType T);
  * If the field's type declaration is not a constant size type,
  *   CXTypeLayoutError_NotConstantSize is returned.
  * If in the record there is another field's type declaration that is 
- *   an incomplete type, CXTypeLayoutError_Incomplete is returned.
+ *   an incomplete type, CXTypeLayoutError_IncompleteFieldParent is returned.
  * If in the record there is another field's type declaration that is
- *   a dependent type, CXTypeLayoutError_Dependent is returned.
- * If in the record there is another field's type declaration that is
- *   not a constant size type, CXTypeLayoutError_NotConstantSize is returned.
+ *   a dependent type, CXTypeLayoutError_DependentFieldParent is returned.
  */
 CINDEX_LINKAGE long long clang_Type_getOffsetOf(CXType T, const char *S);
 
 /**
- * \brief Return the offset of the field specified by the cursor as it would be
- *   returned by __offsetof__
+ * \brief Return the offset of the field specified by the cursor in bits as 
+ *   it would be returned by __offsetof__.
  *
  * If the cursor is not a record field declaration, CXTypeLayoutError_Invalid
  *   is returned.
@@ -2997,14 +2991,10 @@ CINDEX_LINKAGE long long clang_Type_getOffsetOf(CXType T, const char *S);
  *   CXTypeLayoutError_Incomplete is returned.
  * If the field's type declaration is a dependent type, 
  *   CXTypeLayoutError_Dependent is returned.
- * If the field's type declaration is not a constant size type,
- *   CXTypeLayoutError_NotConstantSize is returned.
  * If in the record there is another field's type declaration that is 
- *   an incomplete type, CXTypeLayoutError_Incomplete is returned.
+ *   an incomplete type, CXTypeLayoutError_IncompleteFieldParent is returned.
  * If in the record there is another field's type declaration that is
- *   a dependent type, CXTypeLayoutError_Dependent is returned.
- * If in the record there is another field's type declaration that is
- *   not a constant size type, CXTypeLayoutError_NotConstantSize is returned.
+ *   a dependent type, CXTypeLayoutError_DependentFieldParent is returned.
  */
 CINDEX_LINKAGE long long clang_Cursor_getOffsetOf(CXCursor C);
 

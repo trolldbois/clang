@@ -1156,14 +1156,14 @@ static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
   /* Print the type sizeof if applicable. */
   {
     long long Size = clang_Type_getSizeOf(T);
-    if (Size >= 0) {
+    if (Size >= 0 || Size < -1 ) {
       printf(" [sizeof=%lld]", Size);
     }
   }
   /* Print the type alignof if applicable. */
   {
     long long Align = clang_Type_getAlignOf(T);
-    if (Align >= 0) {
+    if (Align >= 0 || Align < -1) {
       printf(" [alignof=%lld]", Align);
     }
   }

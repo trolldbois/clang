@@ -49,21 +49,32 @@ union u {
 // CHECK32: VarDecl=s1:[[@LINE+1]]:8 (Definition) [type=basic::simple] [typekind=Record] [sizeof=36] [alignof=4]
 simple s1;
 
+struct Test {
+  struct {
+    union {
+//CHECK64: FieldDecl=foo:[[@LINE+1]]:11 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=0]
+      int foo;
+    };
+  };
+};
+
 }
 
 namespace Incomplete {
 // expect compilation error, not crash.
 union f {
-//CHECK64: FieldDecl=f1:[[@LINE+1]]:23 (Definition) [type=struct forward_decl] [typekind=Unexposed] [offsetof=-2]
+//CHECK64: FieldDecl=f1:[[@LINE+1]]:23 (Definition) [type=struct forward_decl] [typekind=Unexposed] [sizeof=-2] [alignof=-2] [offsetof=-2]
   struct forward_decl f1;
 //CHECK64: FieldDecl=f2:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=-6]
   int f2;
-//CHECK64: [sizeof=8] [alignof=4]
   struct {
+//CHECK64: FieldDecl=e1:[[@LINE+1]]:9 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=0]
     int e1;
     struct {
+//CHECK64: FieldDecl=g1:[[@LINE+1]]:28 (Definition) [type=struct forward_decl2] [typekind=Unexposed] [sizeof=-2] [alignof=-2] [offsetof=-2]
       struct forward_decl2 g1;
     };
+//CHECK64: FieldDecl=e3:[[@LINE+1]]:9 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=32]
     int e3;
   } f3;
 };
@@ -79,8 +90,8 @@ class B {
 // CHECK64: FieldDecl=a1:[[@LINE+2]]:6 (Definition) [type=Incomplete::A *] [typekind=Pointer] [sizeof=8] [alignof=8] [offsetof=0]
 // CHECK32: FieldDecl=a1:[[@LINE+1]]:6 (Definition) [type=Incomplete::A *] [typekind=Pointer] [sizeof=4] [alignof=4] [offsetof=0]
   A* a1;
-// CHECK64: FieldDecl=a2:[[@LINE+2]]:6 (Definition) [type=Incomplete::A &] [typekind=LValueReference] [offsetof=64]
-// CHECK32: FieldDecl=a2:[[@LINE+1]]:6 (Definition) [type=Incomplete::A &] [typekind=LValueReference] [offsetof=32]
+// CHECK64: FieldDecl=a2:[[@LINE+2]]:6 (Definition) [type=Incomplete::A &] [typekind=LValueReference] [sizeof=-2] [alignof=-2] [offsetof=64]
+// CHECK32: FieldDecl=a2:[[@LINE+1]]:6 (Definition) [type=Incomplete::A &] [typekind=LValueReference] [sizeof=-2] [alignof=-2] [offsetof=32]
   A& a2;
 };
 
@@ -245,14 +256,14 @@ struct BaseStruct
 namespace NotConstantSize {
 
 void f(int i) {
-// CHECK32: VarDecl=v2:[[@LINE+1]]:8 (Definition) [type=int [i]] [typekind=Unexposed] [alignof=4]
+// CHECK32: VarDecl=v2:[[@LINE+1]]:8 (Definition) [type=int [i]] [typekind=Unexposed] [sizeof=-4] [alignof=4]
    int v2[i];
    {
    struct CS1 {
-//CHECK32: FieldDecl=f1:[[@LINE+1]]:9 (Definition) [type=int [i]] [typekind=Unexposed] [alignof=4] [offsetof=-4]
+// FIXME: should libclang return [offsetof=0] ?
+//CHECK32: FieldDecl=f1:[[@LINE+1]]:9 (Definition) [type=int [i]] [typekind=Unexposed] [sizeof=-4] [alignof=4] [offsetof=0]
     int f1[i];
-//FIXME: clang says [offsetof=0]
-//CHECK32: FieldDecl=f2:[[@LINE+1]]:11 (Definition) [type=float] [typekind=Float] [sizeof=4] [alignof=4] [offsetof=-8]
+//CHECK32: FieldDecl=f2:[[@LINE+1]]:11 (Definition) [type=float] [typekind=Float] [sizeof=4] [alignof=4] [offsetof=0]
     float f2;
    };
    
@@ -265,7 +276,7 @@ namespace CrashTest {
 // test crash scenarios on dependent types.
 template<typename T>
 struct Foo {
-//CHECK32: FieldDecl=t:[[@LINE+1]]:5 (Definition) [type=T] [typekind=Unexposed] [offsetof=-1] [offsets mismatch -1!=-3]
+//CHECK32: FieldDecl=t:[[@LINE+1]]:5 (Definition) [type=T] [typekind=Unexposed] [sizeof=-3] [alignof=-3] [offsetof=-1] [offsets mismatch -1!=-3]
   T t;
 //CHECK32: FieldDecl=a:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=-1] [offsets mismatch -1!=-7]
   int a;
@@ -284,5 +295,39 @@ struct lastValid {
 };
 
 }
+
+
+static_assert(alignof(void(void)) == 1, "alignof(function type) should be 1");
+static_assert(alignof(void(void)) != 4, "alignof(function type) should not be 4");
+static_assert(alignof(void) == 1, "alignof(void) should be 1");
+
+static_assert(sizeof(void(void)) == 1, "sizeof(function type) should be 1");
+static_assert(sizeof(void) == 1, "sizeof(void) should be 1");
+
+
+class C;
+class D {
+  C* c1;
+};
+class C {
+  int c;
+};
+
+C c1;
+D d1;
+
+static_assert(sizeof(c1) == 4, "sizeof(C) should be 4");
+static_assert(sizeof(d1) == sizeof(long), "sizeof(D) should be sizeof long");
+
+struct Test {
+  struct {
+    union {
+      int foo;
+    };
+  };
+};
+#define offsetof(type, member)  __builtin_offsetof (type, member)
+ 
+static_assert(offsetof(struct Test,foo) == 0, "anonymous struct should work");
 
 

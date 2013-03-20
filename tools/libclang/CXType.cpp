@@ -708,32 +708,23 @@ static long long getOffsetOfFieldDecl(const FieldDecl * FD) {
     return CXTypeLayoutError_Incomplete;
   if (QT->isDependentType())
     return CXTypeLayoutError_Dependent;
-  //if (!QT->isConstantSizeType()) // FIXME: test needed
-  //  return CXTypeLayoutError_NotConstantSize;
-  // we also need to validate the parent record type, in case another field in 
-  // the record in incorrect, thereby making the record non suitable.
-  ASTContext &Ctx = FD->getASTContext();
-  QualType PQT = Ctx.getRecordType(FD->getParent());
-  if (PQT->isIncompleteType())
-    return CXTypeLayoutError_IncompleteField;
-  if (PQT->isDependentType())
-    return CXTypeLayoutError_DependentField;
-  //if (!PQT->isConstantSizeType()) // FIXME: test needed
-  //  return CXTypeLayoutError_NotConstantSizeField;
-
+  // we also need to validate the parent record type, in case another field 
+  // in the record in incorrect, thereby making the record non suitable.
   const RecordDecl * PD = FD->getParent();
   for (RecordDecl::field_iterator I = PD->field_begin(), E = PD->field_end();
        I != E; ++I) {
       QualType MQT = (*I)->getType();
       if (MQT->isIncompleteType())
-        return CXTypeLayoutError_IncompleteField;
+        return CXTypeLayoutError_IncompleteFieldParent;
       if (MQT->isDependentType())
-        return CXTypeLayoutError_DependentField;
-      //if (!MQT->isConstantSizeType()) // FIXME: test needed
-      //  return CXTypeLayoutError_NotConstantSizeField;
+        return CXTypeLayoutError_DependentFieldParent;
   }
-
-
+  ASTContext &Ctx = FD->getASTContext();
+  QualType PQT = Ctx.getRecordType(FD->getParent());
+  if (PQT->isIncompleteType())
+    return CXTypeLayoutError_IncompleteFieldParent;
+  if (PQT->isDependentType())
+    return CXTypeLayoutError_DependentFieldParent;
   return Ctx.getFieldOffset(FD);
 }
 
@@ -748,7 +739,12 @@ long long clang_Type_getOffsetOf(CXType PT, const char* S) {
     return CXTypeLayoutError_Invalid;
   RD = RD->getDefinition();
   if (!RD)
-    return CXTypeLayoutError_Incomplete;
+    return CXTypeLayoutError_IncompleteFieldParent;
+  QualType RT = GetQualType(PT);
+  if (RT->isIncompleteType())
+    return CXTypeLayoutError_IncompleteFieldParent;
+  if (RT->isDependentType())
+    return CXTypeLayoutError_DependentFieldParent;
   // iterate the fields to get the matching name
   StringRef fieldname = StringRef(S);
   for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
