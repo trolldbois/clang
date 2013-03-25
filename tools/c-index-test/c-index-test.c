@@ -1170,14 +1170,17 @@ static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
   /* Print the record field offset if applicable. */
   {
     const char *name = clang_getCString(clang_getCursorSpelling(cursor));
-    /* Both function have the same code base  */
-    long long Offset = clang_Type_getOffsetOf(clang_getCursorType(p), name);
-    long long Offset1 = clang_Cursor_getOffsetOf(cursor);
+    /* recurse to get the root parent */
+    CXCursor parent, root;
     if (clang_getCursorKind(cursor) == CXCursor_FieldDecl ) { 
-      printf(" [offsetof=%lld]", Offset);
-      /* on error, error codes could be different. That is expected. */
-      if (Offset != Offset1) {
-        printf(" [offsets mismatch %lld!=%lld]", Offset, Offset1);
+      parent = p;
+      do {
+        root = parent;
+        parent = clang_getCursorSemanticParent(root);
+      } while ( clang_getCursorType(parent).kind == CXType_Record );
+      {
+        long long Offset = clang_Type_getOffsetOf(clang_getCursorType(root), name);
+        printf(" [offsetof=%lld]", Offset);
       }
     }
   }

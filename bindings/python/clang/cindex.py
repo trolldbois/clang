@@ -1314,12 +1314,6 @@ class Cursor(Structure):
         """
         return TokenGroup.get_tokens(self._tu, self.extent)
 
-    def get_record_field_offset(self):
-        """
-        Retrieve the offset of a field in his record, in number of bits.
-        """
-        return conf.lib.clang_Cursor_getOffsetOf(self)
-
     def is_bitfield(self):
         """
         Check if the field is a bitfield.
@@ -3078,10 +3072,6 @@ functionList = [
    [Cursor, c_uint],
    Cursor,
    Cursor.from_result),
-
-  ("clang_Cursor_getOffsetOf",
-   [Cursor],
-   c_longlong),
 
   ("clang_Cursor_isBitField",
    [Cursor],

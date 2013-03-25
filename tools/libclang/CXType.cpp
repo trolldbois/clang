@@ -711,9 +711,6 @@ static long long getOffsetOfFieldDecl(const FieldDecl * FD) {
   // we also need to validate the parent record type, in case another field 
   // in the record in incorrect, thereby making the record non suitable.
   const RecordDecl * PD = FD->getParent();
-  // FIXME offset of parent struct or all parents ?
-  //if ((*I)->isAnonymousStructOrUnion()){
-  
   for (RecordDecl::field_iterator I = PD->field_begin(), E = PD->field_end();
        I != E; ++I) {
       QualType MQT = (*I)->getType();
@@ -741,8 +738,13 @@ static long long visitRecordForNamedField(const RecordDecl * RD, StringRef field
     } else if ((*I)->isAnonymousStructOrUnion()){
       if (const RecordDecl *Child = (*I)->getType()->getAs<RecordType>()->getDecl() ){
         long long ret = visitRecordForNamedField(Child, fieldname);
-        if ( ret != CXTypeLayoutError_InvalidFieldName ){
+        if ( ret == CXTypeLayoutError_InvalidFieldName ){
+            continue;
+        } else if ( ret < 0) {
             return ret;
+        } else {
+            // result is relative to anonymous struct offset
+            return ret+getOffsetOfFieldDecl((*I)); 
         }
       } // else try next field
     } 
@@ -770,16 +772,6 @@ long long clang_Type_getOffsetOf(CXType PT, const char* S) {
   // iterate the fields to get the matching name
   StringRef fieldname = StringRef(S);
   return visitRecordForNamedField(RD, fieldname);
-}
-
-// FIXME: Should probably not exists. Offset of in a anonymous struct or a 
-// embedded struct will not be logical.
-// signature is not standard.
-long long clang_Cursor_getOffsetOf(CXCursor C) {
-  if (!clang_isDeclaration(C.kind))
-    return CXTypeLayoutError_Invalid;
-  const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(cxcursor::getCursorDecl(C));
-  return getOffsetOfFieldDecl(FD);
 }
 
 unsigned clang_Cursor_isBitField(CXCursor C) {

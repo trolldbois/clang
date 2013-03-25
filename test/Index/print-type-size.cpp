@@ -61,13 +61,16 @@ struct Test {
 struct Test2 {
   struct {
     struct {
+//CHECK64: FieldDecl=foo:[[@LINE+1]]:11 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=0]
       int foo;
     };
     struct {
+//CHECK64: FieldDecl=bar:[[@LINE+1]]:11 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=32]
       int bar;
     };
     struct {
         struct {
+//CHECK64: FieldDecl=foobar:[[@LINE+1]]:15 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=64]
           int foobar;
         };
     };
@@ -292,9 +295,9 @@ namespace CrashTest {
 // test crash scenarios on dependent types.
 template<typename T>
 struct Foo {
-//CHECK32: FieldDecl=t:[[@LINE+1]]:5 (Definition) [type=T] [typekind=Unexposed] [sizeof=-3] [alignof=-3] [offsetof=-1] [offsets mismatch -1!=-3]
+//CHECK32: FieldDecl=t:[[@LINE+1]]:5 (Definition) [type=T] [typekind=Unexposed] [sizeof=-3] [alignof=-3] [offsetof=-1]
   T t;
-//CHECK32: FieldDecl=a:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=-1] [offsets mismatch -1!=-7]
+//CHECK32: FieldDecl=a:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=-1]
   int a;
 };
 

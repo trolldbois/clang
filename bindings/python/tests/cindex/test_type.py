@@ -300,7 +300,7 @@ def test_is_restrict_qualified():
     assert not j.type.is_restrict_qualified()
 
 def test_record_layout():
-    """Ensure Cursor.type.get_size, Cursor.type.get_align and Cursor.get_record_field_offset works."""
+    """Ensure Cursor.type.get_size, Cursor.type.get_align and Cursor.type.get_offset works."""
 
     source ="""
 struct a {
@@ -323,10 +323,10 @@ struct a {
 
         assert teststruct.type.get_align() == align
         assert teststruct.type.get_size() == total
-        assert fields[0].get_record_field_offset() == teststruct.type.get_offset(fields[0].spelling) == a1
-        assert fields[1].get_record_field_offset() == teststruct.type.get_offset(fields[1].spelling) == a2
-        assert fields[2].get_record_field_offset() == teststruct.type.get_offset(fields[2].spelling) == a3
-        assert fields[3].get_record_field_offset() == teststruct.type.get_offset(fields[3].spelling) == a4
+        assert teststruct.type.get_offset(fields[0].spelling) == a1
+        assert teststruct.type.get_offset(fields[1].spelling) == a2
+        assert teststruct.type.get_offset(fields[2].spelling) == a3
+        assert teststruct.type.get_offset(fields[3].spelling) == a4
         assert fields[0].is_bitfield() == False
         assert fields[1].is_bitfield() == True
         assert fields[1].get_bitfield_width() == 3
@@ -346,19 +346,17 @@ struct Test {
   };
   int bar;
 };"""
-    tu = get_tu(source)
-    teststruct = get_cursor(tu, 'Test')
-    fields = list(teststruct.get_children())
-    import code
-    #code.interact(local=locals())
-    # FIXME: proof that get_record_field_offset should not exists
-    print 'fields[0].spelling', fields[0].displayname, fields[0].type.kind
-    print 'fields[0].spelling', fields[1].displayname, fields[1].type.kind
-    #print 'fields[0].spelling', fields[2].displayname, fields[2].type.kind
-    print 'fields[0].get_record_field_offset()', fields[0].get_record_field_offset()
-    print 'teststruct.type.get_offset("foo")', teststruct.type.get_offset("foo") 
-    print 'teststruct.type.get_offset("")', teststruct.type.get_offset("") 
-    assert fields[0].get_record_field_offset() == teststruct.type.get_offset("foo") > 0
-    assert fields[1].get_record_field_offset() == teststruct.type.get_offset("bar") > 0
+    tries=[(['-target','i386-linux-gnu'],(4,16,0,32,64)),
+           (['-target','nvptx64-unknown-unknown'],(8,24,0,32,64)),
+           (['-target','i386-pc-win32'],(8,16,0,32,64)),
+           (['-target','msp430-none-none'],(2,14,0,32,64))]
+    for flags, values in tries:
+        align,total,bariton,foo,bar = values
+        tu = get_tu(source)
+        teststruct = get_cursor(tu, 'Test')
+        fields = list(teststruct.get_children())
+        assert teststruct.type.get_offset("bariton") == bariton
+        assert teststruct.type.get_offset("foo") == foo
+        assert teststruct.type.get_offset("bar") == bar
 
 
