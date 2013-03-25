@@ -728,23 +728,26 @@ static long long getOffsetOfFieldDecl(const FieldDecl * FD) {
   return Ctx.getFieldOffset(FD);
 }
 
-static long long visitRecordForNamedField(const RecordDecl * RD, StringRef fieldname) {
+static long long visitRecordForNamedField(const RecordDecl * RD, StringRef FieldName) {
   for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
        I != E; ++I) {
     // handle normal fieldname, fieldname == '' == anonymous record, and 
     // field name in a anonymous record
-    if ( fieldname.equals((*I)->getName()) ) {
+    if ( FieldName.equals((*I)->getName()) ) {
       return getOffsetOfFieldDecl((*I));
     } else if ((*I)->isAnonymousStructOrUnion()){
       if (const RecordDecl *Child = (*I)->getType()->getAs<RecordType>()->getDecl() ){
-        long long ret = visitRecordForNamedField(Child, fieldname);
-        if ( ret == CXTypeLayoutError_InvalidFieldName ){
+        long long Offset = visitRecordForNamedField(Child, FieldName);
+        if ( Offset == CXTypeLayoutError_InvalidFieldName ){
             continue;
-        } else if ( ret < 0) {
-            return ret;
+        } else if ( Offset < 0) {
+            return Offset;
         } else {
             // result is relative to anonymous struct offset
-            return ret+getOffsetOfFieldDecl((*I)); 
+            long long ParentOffset = getOffsetOfFieldDecl((*I));
+            if ( ParentOffset < 0 )
+                return ParentOffset;
+            return Offset+ParentOffset;
         }
       } // else try next field
     } 
@@ -770,8 +773,8 @@ long long clang_Type_getOffsetOf(CXType PT, const char* S) {
   if (RT->isDependentType())
     return CXTypeLayoutError_DependentFieldParent;
   // iterate the fields to get the matching name
-  StringRef fieldname = StringRef(S);
-  return visitRecordForNamedField(RD, fieldname);
+  StringRef FieldName = StringRef(S);
+  return visitRecordForNamedField(RD, FieldName);
 }
 
 unsigned clang_Cursor_isBitField(CXCursor C) {

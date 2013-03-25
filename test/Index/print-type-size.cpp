@@ -87,15 +87,15 @@ union f {
 //CHECK64: FieldDecl=f2:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=-6]
   int f2;
   struct {
-//CHECK64: FieldDecl=e1:[[@LINE+1]]:9 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=0]
+//CHECK64: FieldDecl=e1:[[@LINE+1]]:9 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=-6]
     int e1;
     struct {
-//CHECK64: FieldDecl=g1:[[@LINE+1]]:28 (Definition) [type=struct forward_decl2] [typekind=Unexposed] [sizeof=-2] [alignof=-2] [offsetof=-2]
+//CHECK64: FieldDecl=g1:[[@LINE+1]]:28 (Definition) [type=struct forward_decl2] [typekind=Unexposed] [sizeof=-2] [alignof=-2] [offsetof=-5]
       struct forward_decl2 g1;
     };
-//CHECK64: FieldDecl=e3:[[@LINE+1]]:9 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=32]
+//CHECK64: FieldDecl=e3:[[@LINE+1]]:9 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=-6]
     int e3;
-  } f3;
+  };
 };
 
 // CHECK64: StructDecl=As:[[@LINE+1]]:8 [type=Incomplete::As] [typekind=Record]
