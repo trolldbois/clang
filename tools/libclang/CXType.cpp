@@ -739,15 +739,15 @@ static long long visitRecordForNamedField(const RecordDecl * RD, StringRef field
     if ( fieldname.equals((*I)->getName()) ) {
       return getOffsetOfFieldDecl((*I));
     } else if ((*I)->isAnonymousStructOrUnion()){
-      if (const RecordDecl *Child = dyn_cast<RecordDecl>((*I)->getType()->getAs<RecordType>()->getDecl()) ){
+      if (const RecordDecl *Child = (*I)->getType()->getAs<RecordType>()->getDecl() ){
         long long ret = visitRecordForNamedField(Child, fieldname);
         if ( ret != CXTypeLayoutError_InvalidFieldName ){
             return ret;
         }
-      }
+      } // else try next field
     } 
   }
-  return CXTypeLayoutError_InvalidFieldName; // FieldDecl is Null
+  return CXTypeLayoutError_InvalidFieldName; 
 }
 
 long long clang_Type_getOffsetOf(CXType PT, const char* S) {
@@ -769,18 +769,12 @@ long long clang_Type_getOffsetOf(CXType PT, const char* S) {
     return CXTypeLayoutError_DependentFieldParent;
   // iterate the fields to get the matching name
   StringRef fieldname = StringRef(S);
-  /*
-  for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
-       I != E; ++I) {
-    if ( fieldname == (*I)->getName())
-      return getOffsetOfFieldDecl((*I));
-  }
-  */
   return visitRecordForNamedField(RD, fieldname);
 }
 
 // FIXME: Should probably not exists. Offset of in a anonymous struct or a 
 // embedded struct will not be logical.
+// signature is not standard.
 long long clang_Cursor_getOffsetOf(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
     return CXTypeLayoutError_Invalid;

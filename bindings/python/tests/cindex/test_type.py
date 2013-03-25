@@ -343,7 +343,7 @@ struct Test {
     union {
       int foo;
     };
-  } a;
+  };
   int bar;
 };"""
     tu = get_tu(source)
@@ -352,8 +352,12 @@ struct Test {
     import code
     #code.interact(local=locals())
     # FIXME: proof that get_record_field_offset should not exists
+    print 'fields[0].spelling', fields[0].displayname, fields[0].type.kind
+    print 'fields[0].spelling', fields[1].displayname, fields[1].type.kind
+    #print 'fields[0].spelling', fields[2].displayname, fields[2].type.kind
     print 'fields[0].get_record_field_offset()', fields[0].get_record_field_offset()
     print 'teststruct.type.get_offset("foo")', teststruct.type.get_offset("foo") 
+    print 'teststruct.type.get_offset("")', teststruct.type.get_offset("") 
     assert fields[0].get_record_field_offset() == teststruct.type.get_offset("foo") > 0
     assert fields[1].get_record_field_offset() == teststruct.type.get_offset("bar") > 0
 

@@ -65,11 +65,11 @@ struct Test2 {
     };
     struct {
       int bar;
-    } b;
+    };
     struct {
         struct {
           int foobar;
-        } x;
+        };
     };
   };
 };
