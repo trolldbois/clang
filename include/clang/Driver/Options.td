@@ -499,6 +499,12 @@ def fdelayed_template_parsing : Flag<["-"], "fdelayed-template-parsing">, Group<
 def fmodules_cache_path : Joined<["-"], "fmodules-cache-path=">, Group<i_Group>,
   Flags<[NoForward,CC1Option]>, MetaVarName<"<directory>">,
   HelpText<"Specify the module cache path">;
+def fmodules_prune_interval : Joined<["-"], "fmodules-prune-interval=">, Group<i_Group>,
+  Flags<[CC1Option]>, MetaVarName<"<seconds>">,
+  HelpText<"Specify the interval (in seconds) between attempts to prune the module cache">;
+def fmodules_prune_after : Joined<["-"], "fmodules-prune-after=">, Group<i_Group>,
+  Flags<[CC1Option]>, MetaVarName<"<seconds>">,
+  HelpText<"Specify the interval (in seconds) after which a module file will be considered unused">;
 def fmodules : Flag <["-"], "fmodules">, Group<f_Group>, Flags<[NoForward,CC1Option]>,
   HelpText<"Enable the 'modules' language feature">;
 def fmodules_autolink : Flag <["-"], "fmodules-autolink">, Group<f_Group>, Flags<[NoForward,CC1Option]>,
@@ -1016,6 +1022,11 @@ def rewrite_objc : Flag<["-"], "rewrite-objc">, Flags<[DriverOption,CC1Option]>,
 def rewrite_legacy_objc : Flag<["-"], "rewrite-legacy-objc">, Flags<[DriverOption]>,
   HelpText<"Rewrite Legacy Objective-C source to C++">;
 def rdynamic : Flag<["-"], "rdynamic">;
+def resource_dir : Separate<["-"], "resource-dir">,
+  Flags<[DriverOption, CC1Option, HelpHidden]>,
+  HelpText<"The directory which holds the compiler resource files">;
+def resource_dir_EQ : Joined<["-"], "resource-dir=">, Flags<[DriverOption]>,
+  Alias<resource_dir>;
 def rpath : Separate<["-"], "rpath">, Flags<[LinkerInput]>;
 def rtlib_EQ : Joined<["-", "--"], "rtlib=">;
 def r : Flag<["-"], "r">;

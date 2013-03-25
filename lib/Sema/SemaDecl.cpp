@@ -676,9 +676,9 @@ Corrected:
                    (isa<TypeDecl>(UnderlyingFirstDecl) || 
                     isa<ObjCInterfaceDecl>(UnderlyingFirstDecl) ||
                     isa<ObjCCompatibleAliasDecl>(UnderlyingFirstDecl))) {
-           UnqualifiedDiag = diag::err_unknown_typename_suggest;
-           QualifiedDiag = diag::err_unknown_nested_typename_suggest;
-         }
+          UnqualifiedDiag = diag::err_unknown_typename_suggest;
+          QualifiedDiag = diag::err_unknown_nested_typename_suggest;
+        }
 
         if (SS.isEmpty())
           Diag(NameLoc, UnqualifiedDiag)
@@ -7916,6 +7916,7 @@ void Sema::CheckCompleteVariableDeclaration(VarDecl *var) {
     // Regardless, we don't want to ignore array nesting when
     // constructing this copy.
     if (type->isStructureOrClassType()) {
+      EnterExpressionEvaluationContext scope(*this, PotentiallyEvaluated);
       SourceLocation poi = var->getLocation();
       Expr *varRef =new (Context) DeclRefExpr(var, false, type, VK_LValue, poi);
       ExprResult result
@@ -11826,7 +11827,8 @@ void Sema::createImplicitModuleImport(SourceLocation Loc, Module *Mod) {
   Consumer.HandleImplicitImportDecl(ImportD);
 
   // Make the module visible.
-  PP.getModuleLoader().makeModuleVisible(Mod, Module::AllVisible, Loc);
+  PP.getModuleLoader().makeModuleVisible(Mod, Module::AllVisible, Loc,
+                                         /*Complain=*/false);
 }
 
 void Sema::ActOnPragmaRedefineExtname(IdentifierInfo* Name,

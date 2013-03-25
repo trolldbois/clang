@@ -711,6 +711,9 @@ static long long getOffsetOfFieldDecl(const FieldDecl * FD) {
   // we also need to validate the parent record type, in case another field 
   // in the record in incorrect, thereby making the record non suitable.
   const RecordDecl * PD = FD->getParent();
+  // FIXME offset of parent struct or all parents ?
+  //if ((*I)->isAnonymousStructOrUnion()){
+  
   for (RecordDecl::field_iterator I = PD->field_begin(), E = PD->field_end();
        I != E; ++I) {
       QualType MQT = (*I)->getType();
@@ -726,6 +729,25 @@ static long long getOffsetOfFieldDecl(const FieldDecl * FD) {
   if (PQT->isDependentType())
     return CXTypeLayoutError_DependentFieldParent;
   return Ctx.getFieldOffset(FD);
+}
+
+static long long visitRecordForNamedField(const RecordDecl * RD, StringRef fieldname) {
+  for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
+       I != E; ++I) {
+    // handle normal fieldname, fieldname == '' == anonymous record, and 
+    // field name in a anonymous record
+    if ( fieldname.equals((*I)->getName()) ) {
+      return getOffsetOfFieldDecl((*I));
+    } else if ((*I)->isAnonymousStructOrUnion()){
+      if (const RecordDecl *Child = dyn_cast<RecordDecl>((*I)->getType()->getAs<RecordType>()->getDecl()) ){
+        long long ret = visitRecordForNamedField(Child, fieldname);
+        if ( ret != CXTypeLayoutError_InvalidFieldName ){
+            return ret;
+        }
+      }
+    } 
+  }
+  return CXTypeLayoutError_InvalidFieldName; // FieldDecl is Null
 }
 
 long long clang_Type_getOffsetOf(CXType PT, const char* S) {
@@ -747,14 +769,18 @@ long long clang_Type_getOffsetOf(CXType PT, const char* S) {
     return CXTypeLayoutError_DependentFieldParent;
   // iterate the fields to get the matching name
   StringRef fieldname = StringRef(S);
+  /*
   for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
        I != E; ++I) {
     if ( fieldname == (*I)->getName())
       return getOffsetOfFieldDecl((*I));
   }
-  return CXTypeLayoutError_InvalidFieldName; // FieldDecl is Null
+  */
+  return visitRecordForNamedField(RD, fieldname);
 }
 
+// FIXME: Should probably not exists. Offset of in a anonymous struct or a 
+// embedded struct will not be logical.
 long long clang_Cursor_getOffsetOf(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
     return CXTypeLayoutError_Invalid;

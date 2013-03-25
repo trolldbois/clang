@@ -323,8 +323,8 @@ TEST_F(FormatTest, FormatsForLoop) {
   verifyFormat(
       "for (aaaaaaaaaaaaaaaaa aaaaaaaaaaa = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;\n"
       "     aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa !=\n"
-      "     aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
-      "         aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa);\n"
+      "         aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
+      "             aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa);\n"
       "     ++aaaaaaaaaaa) {\n}");
   verifyFormat("for (int aaaaaaaaaaa = 1; aaaaaaaaaaa <= bbbbbbbbbbbbbbb;\n"
                "     aaaaaaaaaaa++, bbbbbbbbbbbbbbbbb++) {\n"
@@ -441,6 +441,11 @@ TEST_F(FormatTest, FormatsSwitchStatement) {
                "  }\n"
                "  break;\n"
                "}");
+  verifyFormat("#define A          \\\n"
+               "  switch (x) {     \\\n"
+               "  case a:          \\\n"
+               "    foo = b;       \\\n"
+               "  }", getLLVMStyleWithColumns(20));
 
   verifyGoogleFormat("switch (x) {\n"
                      "  case 1:\n"
@@ -485,6 +490,7 @@ TEST_F(FormatTest, FormatsLabels) {
 //===----------------------------------------------------------------------===//
 
 TEST_F(FormatTest, UnderstandsSingleLineComments) {
+  verifyFormat("//* */");
   verifyFormat("// line 1\n"
                "// line 2\n"
                "void f() {}\n");
@@ -588,6 +594,21 @@ TEST_F(FormatTest, UnderstandsSingleLineComments) {
       "    aaaaaaaaaaaaaaaaaaaaaa);  // 81 cols with this comment");
 }
 
+TEST_F(FormatTest, CanFormatCommentsLocally) {
+  EXPECT_EQ("int a;    // comment\n"
+            "int    b; // comment",
+            format("int   a; // comment\n"
+                   "int    b; // comment",
+                   0, 0, getLLVMStyle()));
+  EXPECT_EQ("int   a; // comment\n"
+            "         // line 2\n"
+            "int b;",
+            format("int   a; // comment\n"
+                   "            // line 2\n"
+                   "int b;",
+                   28, 0, getLLVMStyle()));
+}
+
 TEST_F(FormatTest, RemovesTrailingWhitespaceOfComments) {
   EXPECT_EQ("// comment", format("// comment  "));
   EXPECT_EQ("int aaaaaaa, bbbbbbb; // comment",
@@ -662,11 +683,14 @@ TEST_F(FormatTest, AlignsMultiLineComments) {
 
 TEST_F(FormatTest, SplitsLongLinesInComments) {
   EXPECT_EQ("/* This is a long\n"
-            "comment that doesn't\n"
-            "fit on one line.  */",
+            " * comment that\n"
+            " * doesn't\n"
+            " * fit on one line.\n"
+            " */",
             format("/* "
                    "This is a long                                         "
-                   "comment that doesn't                                    "
+                   "comment that "
+                   "doesn't                                    "
                    "fit on one line.  */",
                    getLLVMStyleWithColumns(20)));
   EXPECT_EQ("/*\n"
@@ -685,7 +709,7 @@ TEST_F(FormatTest, SplitsLongLinesInComments) {
             " * doesn't fit on\n"
             " * one line.\n"
             " */",
-            format("/*\n"
+            format("/*      \n"
                    " * This is a long "
                    "   comment that     "
                    "   doesn't fit on   "
@@ -752,12 +776,22 @@ TEST_F(FormatTest, SplitsLongLinesInComments) {
             format("   /*\n"
                    "    * This is a long comment that doesn't fit on one line\n"
                    "    */", getLLVMStyleWithColumns(20)));
+  EXPECT_EQ("{\n"
+            "  if (something) /* This is a\n"
+            "long comment */\n"
+            "    ;\n"
+            "}",
+            format("{\n"
+                   "  if (something) /* This is a long comment */\n"
+                   "    ;\n"
+                   "}",
+                   getLLVMStyleWithColumns(30)));
 }
 
 TEST_F(FormatTest, SplitsLongLinesInCommentsInPreprocessor) {
   EXPECT_EQ("#define X          \\\n"
-            // FIXME: Backslash should be added here.
-            "  /*\n"
+            "  /*               \\\n"
+            "   Test            \\\n"
             "   Macro comment   \\\n"
             "   with a long     \\\n"
             "   line            \\\n"
@@ -768,19 +802,31 @@ TEST_F(FormatTest, SplitsLongLinesInCommentsInPreprocessor) {
             "  A + B",
             format("#define X \\\n"
                    "  /*\n"
+                   "   Test\n"
                    "   Macro comment with a long  line\n"
                    "   */ \\\n"
                    "  A + B",
                    getLLVMStyleWithColumns(20)));
   EXPECT_EQ("#define X          \\\n"
             "  /* Macro comment \\\n"
-            // FIXME: Indent comment continuations when the comment is a first
-            // token in a line.
-            "with a long  line  \\\n"
+            "     with a long   \\\n"
             // FIXME: We should look at the length of the last line of the token
             // instead of the full token's length.
-            //"*/                 \\\n"
-            "*/\\\n"
+            //"   line */         \\\n"
+            "     line */\\\n"
+            "  A + B",
+            format("#define X \\\n"
+                   "  /* Macro comment with a long\n"
+                   "     line */ \\\n"
+                   "  A + B",
+                   getLLVMStyleWithColumns(20)));
+  EXPECT_EQ("#define X          \\\n"
+            "  /* Macro comment \\\n"
+            "   * with a long   \\\n"
+            // FIXME: We should look at the length of the last line of the token
+            // instead of the full token's length.
+            //"   * line */       \\\n"
+            "   * line */\\\n"
             "  A + B",
             format("#define X \\\n"
                    "  /* Macro comment with a long  line */ \\\n"
@@ -1209,7 +1255,7 @@ TEST_F(FormatTest, MacroDefinitionsWithIncompleteCode) {
 
   // FIXME: Improve formatting of case labels in macros.
   verifyFormat("#define SOMECASES  \\\n"
-               "case 1:            \\\n"
+               "  case 1:          \\\n"
                "  case 2\n",
                getLLVMStyleWithColumns(20));
 
@@ -1441,7 +1487,7 @@ TEST_F(FormatTest, BreaksAsHighAsPossible) {
       "    f();\n"
       "}");
   verifyFormat("if (Intervals[i].getRange().getFirst() <\n"
-               "    Intervals[i - 1].getRange().getLast()) {\n}");
+               "        Intervals[i - 1].getRange().getLast()) {\n}");
 }
 
 TEST_F(FormatTest, BreaksDesireably) {
@@ -1480,6 +1526,10 @@ TEST_F(FormatTest, BreaksDesireably) {
   verifyFormat(
       "aaaaaa(aaa, new Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
       "                aaaaaaaaaaaaaaaaaaaaaaaaaaaaa));");
+  verifyFormat(
+      "aaaaaaaaaaaaaaaaa(\n"
+      "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa + aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
+      "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa);");
 
   // This test case breaks on an incorrect memoization, i.e. an optimization not
   // taking into account the StopAt value.
@@ -1672,7 +1722,7 @@ TEST_F(FormatTest, BreaksConditionalExpressions) {
       "                                                    : aaaaaaaaaaaaa);");
   verifyFormat(
       "aaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaaaaaaaaaaaa,\n"
-      "                   aaaaaaaaaaaaaaaa ? aaaaaaaaaaaaaaaaaaaaaaa\n"
+      "                   aaaaaaaaaaaaaaaa ? aaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
       "                                    : aaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
       "                   aaaaaaaaaaaaa);");
   verifyFormat("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
@@ -1991,7 +2041,18 @@ TEST_F(FormatTest, UnderstandsTemplateParameters) {
 
 TEST_F(FormatTest, UnderstandsBinaryOperators) {
   verifyFormat("COMPARE(a, ==, b);");
-  verifyFormat("(a->*f)()");
+}
+
+TEST_F(FormatTest, UnderstandsPointersToMembers) {
+  verifyFormat("int A::*x;");
+  // FIXME: Recognize pointers to member functions.
+  //verifyFormat("int (S::*func)(void *);");
+  verifyFormat("int(S::*func)(void *);");
+  verifyFormat("(a->*f)();");
+  verifyFormat("a->*x;");
+  verifyFormat("(a.*f)();");
+  verifyFormat("((*a).*f)();");
+  verifyFormat("a.*x;");
 }
 
 TEST_F(FormatTest, UnderstandsUnaryOperators) {
@@ -2021,6 +2082,8 @@ TEST_F(FormatTest, UnderstandsUnaryOperators) {
                "case -1:\n"
                "  break;\n"
                "}");
+  verifyFormat("#define X -1");
+  verifyFormat("#define X -kConstant");
 
   verifyFormat("const NSPoint kBrowserFrameViewPatternOffset = { -5, +3 };");
   verifyFormat("const NSPoint kBrowserFrameViewPatternOffset = { +5, -3 };");
@@ -2265,10 +2328,13 @@ TEST_F(FormatTest, FormatsFunctionTypes) {
   verifyFormat("A<bool()> a;");
   verifyFormat("A<SomeType()> a;");
   verifyFormat("A<void(*)(int, std::string)> a;");
+  verifyFormat("A<void *(int)>;");
 
   // FIXME: Inconsistent.
   verifyFormat("int (*func)(void *);");
   verifyFormat("void f() { int(*func)(void *); }");
+
+  verifyGoogleFormat("A<void*(int)>;");
 }
 
 TEST_F(FormatTest, BreaksLongDeclarations) {
@@ -2401,7 +2467,10 @@ TEST_F(FormatTest, IncorrectAccessSpecifier) {
                "B { int x; }");
 }
 
-TEST_F(FormatTest, IncorrectCodeUnbalancedBraces) { verifyFormat("{"); }
+TEST_F(FormatTest, IncorrectCodeUnbalancedBraces) {
+  verifyFormat("{");
+  verifyFormat("#})");
+}
 
 TEST_F(FormatTest, IncorrectCodeDoNoWhile) {
   verifyFormat("do {\n}");
@@ -2532,6 +2601,9 @@ TEST_F(FormatTest, UnderstandContextOfRecordTypeKeywords) {
                "  class X x;\n"
                "else\n"
                "  f();\n");
+
+  // This is simply incomplete. Formatting is not important, but must not crash.
+  verifyFormat("class A:"); 
 }
 
 TEST_F(FormatTest, DoNotInterfereWithErrorAndWarning) {
@@ -2598,12 +2670,12 @@ TEST_F(FormatTest, BlockComments) {
   EXPECT_EQ("/* */ /* */ /* */\n/* */ /* */ /* */",
             format("/* *//* */  /* */\n/* *//* */  /* */"));
   EXPECT_EQ("/* */ a /* */ b;", format("  /* */  a/* */  b;"));
-  EXPECT_EQ("#define A /*   */\\\n"
+  EXPECT_EQ("#define A /*123*/\\\n"
             "  b\n"
             "/* */\n"
             "someCall(\n"
             "    parameter);",
-            format("#define A /*   */ b\n"
+            format("#define A /*123*/ b\n"
                    "/* */\n"
                    "someCall(parameter);",
                    getLLVMStyleWithColumns(15)));
@@ -2743,6 +2815,7 @@ TEST_F(FormatTest, FormatForObjectiveCMethodDecls) {
 
   // If there's no return type (very rare in practice!), LLVM and Google style
   // agree.
+  verifyFormat("- foo;");
   verifyFormat("- foo:(int)f;");
   verifyGoogleFormat("- foo:(int)foo;");
 }
@@ -3267,6 +3340,13 @@ TEST_F(FormatTest, ReformatRegionAdjustsIndent) {
             format("void f() {}\n"
                    "void g() {}",
                    13, 0, getLLVMStyle()));
+  EXPECT_EQ("int a; // comment\n"
+            "       // line 2\n"
+            "int b;",
+            format("int a; // comment\n"
+                   "       // line 2\n"
+                   "  int b;",
+                   35, 0, getLLVMStyle()));
 }
 
 TEST_F(FormatTest, BreakStringLiterals) {

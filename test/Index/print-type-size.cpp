@@ -58,6 +58,22 @@ struct Test {
   };
 };
 
+struct Test2 {
+  struct {
+    struct {
+      int foo;
+    };
+    struct {
+      int bar;
+    } b;
+    struct {
+        struct {
+          int foobar;
+        } x;
+    };
+  };
+};
+
 }
 
 namespace Incomplete {

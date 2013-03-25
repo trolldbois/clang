@@ -339,16 +339,22 @@ def test_offset():
     source="""
 struct Test {
   struct {
+    int bariton;
     union {
       int foo;
     };
-  };
+  } a;
+  int bar;
 };"""
     tu = get_tu(source)
     teststruct = get_cursor(tu, 'Test')
     fields = list(teststruct.get_children())
     import code
-    code.interact(local=locals())
-    assert fields[0].get_record_field_offset() == teststruct.type.get_offset("foo") == a1
+    #code.interact(local=locals())
+    # FIXME: proof that get_record_field_offset should not exists
+    print 'fields[0].get_record_field_offset()', fields[0].get_record_field_offset()
+    print 'teststruct.type.get_offset("foo")', teststruct.type.get_offset("foo") 
+    assert fields[0].get_record_field_offset() == teststruct.type.get_offset("foo") > 0
+    assert fields[1].get_record_field_offset() == teststruct.type.get_offset("bar") > 0
 
 

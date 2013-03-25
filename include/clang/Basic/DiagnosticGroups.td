@@ -159,6 +159,7 @@ def MismatchedParameterTypes : DiagGroup<"mismatched-parameter-types">;
 def MismatchedReturnTypes : DiagGroup<"mismatched-return-types">;
 def MismatchedTags : DiagGroup<"mismatched-tags">;
 def MissingFieldInitializers : DiagGroup<"missing-field-initializers">;
+def ModuleConflict : DiagGroup<"module-conflict">;
 def NullArithmetic : DiagGroup<"null-arithmetic">;
 def NullCharacter : DiagGroup<"null-character">;
 def NullDereference : DiagGroup<"null-dereference">;
@@ -265,6 +266,7 @@ def Trigraphs      : DiagGroup<"trigraphs">;
 
 def : DiagGroup<"type-limits">;
 def UndefinedReinterpretCast : DiagGroup<"undefined-reinterpret-cast">;
+def ReinterpretBaseClass : DiagGroup<"reinterpret-base-class">;
 def Unicode  : DiagGroup<"unicode">;
 def UninitializedMaybe : DiagGroup<"conditional-uninitialized">;
 def UninitializedSometimes : DiagGroup<"sometimes-uninitialized">;
@@ -493,7 +495,7 @@ def ObjCNonUnifiedException : DiagGroup<"objc-nonunified-exceptions">;
 
 def ObjCProtocolMethodImpl : DiagGroup<"objc-protocol-method-implementation">;
 
-def ObjCNoPropertyAuthoSynthesis : DiagGroup<"objc-property-synthesis">;
+def ObjCNoPropertyAutoSynthesis : DiagGroup<"objc-property-synthesis">;
 
 // ObjC API warning groups.
 def ObjCRedundantLiteralUse : DiagGroup<"objc-redundant-literal-use">;
@@ -515,3 +517,6 @@ def ASMOperandWidths : DiagGroup<"asm-operand-widths">;
 def ASM : DiagGroup<"asm", [
     ASMOperandWidths
   ]>;
+
+// OpenMP warnings.
+def SourceUsesOpenMP : DiagGroup<"source-uses-openmp">;

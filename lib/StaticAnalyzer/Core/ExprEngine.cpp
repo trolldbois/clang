@@ -1692,12 +1692,6 @@ ProgramStateRef ExprEngine::processPointerEscapedOnBind(ProgramStateRef State,
       if (StoredVal != Val)
         escapes = (State == (State->bindLoc(*regionLoc, Val)));
     }
-    if (!escapes) {
-      // Case 4: We do not currently model what happens when a symbol is
-      // assigned to a struct field, so be conservative here and let the symbol
-      // go. TODO: This could definitely be improved upon.
-      escapes = !isa<VarRegion>(regionLoc->getRegion());
-    }
   }
 
   // If our store can represent the binding and we aren't storing to something
@@ -2161,54 +2155,27 @@ struct DOTGraphTraits<ExplodedNode*> :
         break;
       }
 
-      default: {
-        if (Optional<StmtPoint> L = Loc.getAs<StmtPoint>()) {
-          const Stmt *S = L->getStmt();
-
-          Out << S->getStmtClassName() << ' ' << (const void*) S << ' ';
+      case ProgramPoint::PostInitializerKind: {
+        Out << "PostInitializer: ";
+        const CXXCtorInitializer *Init =
+          Loc.castAs<PostInitializer>().getInitializer();
+        if (const FieldDecl *FD = Init->getAnyMember())
+          Out << *FD;
+        else {
+          QualType Ty = Init->getTypeSourceInfo()->getType();
+          Ty = Ty.getLocalUnqualifiedType();
           LangOptions LO; // FIXME.
-          S->printPretty(Out, 0, PrintingPolicy(LO));
-          printLocation(Out, S->getLocStart());
-
-          if (Loc.getAs<PreStmt>())
-            Out << "\\lPreStmt\\l;";
-          else if (Loc.getAs<PostLoad>())
-            Out << "\\lPostLoad\\l;";
-          else if (Loc.getAs<PostStore>())
-            Out << "\\lPostStore\\l";
-          else if (Loc.getAs<PostLValue>())
-            Out << "\\lPostLValue\\l";
-
-#if 0
-            // FIXME: Replace with a general scheme to determine
-            // the name of the check.
-          if (GraphPrintCheckerState->isImplicitNullDeref(N))
-            Out << "\\|Implicit-Null Dereference.\\l";
-          else if (GraphPrintCheckerState->isExplicitNullDeref(N))
-            Out << "\\|Explicit-Null Dereference.\\l";
-          else if (GraphPrintCheckerState->isUndefDeref(N))
-            Out << "\\|Dereference of undefialied value.\\l";
-          else if (GraphPrintCheckerState->isUndefStore(N))
-            Out << "\\|Store to Undefined Loc.";
-          else if (GraphPrintCheckerState->isUndefResult(N))
-            Out << "\\|Result of operation is undefined.";
-          else if (GraphPrintCheckerState->isNoReturnCall(N))
-            Out << "\\|Call to function marked \"noreturn\".";
-          else if (GraphPrintCheckerState->isBadCall(N))
-            Out << "\\|Call to NULL/Undefined.";
-          else if (GraphPrintCheckerState->isUndefArg(N))
-            Out << "\\|Argument in call is undefined";
-#endif
-
-          break;
+          Ty.print(Out, LO);
         }
+        break;
+      }
 
+      case ProgramPoint::BlockEdgeKind: {
         const BlockEdge &E = Loc.castAs<BlockEdge>();
         Out << "Edge: (B" << E.getSrc()->getBlockID() << ", B"
             << E.getDst()->getBlockID()  << ')';
 
         if (const Stmt *T = E.getSrc()->getTerminator()) {
-
           SourceLocation SLoc = T->getLocStart();
 
           Out << "\\|Terminator: ";
@@ -2267,6 +2234,48 @@ struct DOTGraphTraits<ExplodedNode*> :
           Out << "\\|Control-flow based on\\lUndefined value.\\l";
         }
 #endif
+        break;
+      }
+
+      default: {
+        const Stmt *S = Loc.castAs<StmtPoint>().getStmt();
+
+        Out << S->getStmtClassName() << ' ' << (const void*) S << ' ';
+        LangOptions LO; // FIXME.
+        S->printPretty(Out, 0, PrintingPolicy(LO));
+        printLocation(Out, S->getLocStart());
+
+        if (Loc.getAs<PreStmt>())
+          Out << "\\lPreStmt\\l;";
+        else if (Loc.getAs<PostLoad>())
+          Out << "\\lPostLoad\\l;";
+        else if (Loc.getAs<PostStore>())
+          Out << "\\lPostStore\\l";
+        else if (Loc.getAs<PostLValue>())
+          Out << "\\lPostLValue\\l";
+
+#if 0
+          // FIXME: Replace with a general scheme to determine
+          // the name of the check.
+        if (GraphPrintCheckerState->isImplicitNullDeref(N))
+          Out << "\\|Implicit-Null Dereference.\\l";
+        else if (GraphPrintCheckerState->isExplicitNullDeref(N))
+          Out << "\\|Explicit-Null Dereference.\\l";
+        else if (GraphPrintCheckerState->isUndefDeref(N))
+          Out << "\\|Dereference of undefialied value.\\l";
+        else if (GraphPrintCheckerState->isUndefStore(N))
+          Out << "\\|Store to Undefined Loc.";
+        else if (GraphPrintCheckerState->isUndefResult(N))
+          Out << "\\|Result of operation is undefined.";
+        else if (GraphPrintCheckerState->isNoReturnCall(N))
+          Out << "\\|Call to function marked \"noreturn\".";
+        else if (GraphPrintCheckerState->isBadCall(N))
+          Out << "\\|Call to NULL/Undefined.";
+        else if (GraphPrintCheckerState->isUndefArg(N))
+          Out << "\\|Argument in call is undefined";
+#endif
+
+        break;
       }
     }
 

@@ -560,11 +560,18 @@ public:
   MacroDirective *getMacroDirectiveHistory(const IdentifierInfo *II) const;
 
   /// \brief Specify a macro for this identifier.
+  void setMacroDirective(IdentifierInfo *II, MacroDirective *MD);
   MacroDirective *setMacroDirective(IdentifierInfo *II, MacroInfo *MI,
-                                    SourceLocation Loc, bool isImported);
+                                    SourceLocation Loc, bool isImported) {
+    MacroDirective *MD = AllocateMacroDirective(MI, Loc, isImported);
+    setMacroDirective(II, MD);
+    return MD;
+  }
   MacroDirective *setMacroDirective(IdentifierInfo *II, MacroInfo *MI) {
     return setMacroDirective(II, MI, MI->getDefinitionLoc(), false);
   }
+  /// \brief Set a MacroDirective that was loaded from a PCH file.
+  void setLoadedMacroDirective(IdentifierInfo *II, MacroDirective *MD);
   /// \brief Add a MacroInfo that was loaded from an AST file.
   void addLoadedMacroInfo(IdentifierInfo *II, MacroDirective *MD,
                           MacroDirective *Hint = 0);
@@ -960,8 +967,8 @@ public:
   ///   "cleaning", e.g. if it contains trigraphs or escaped newlines
   /// \param invalid If non-null, will be set \c true if an error occurs.
   StringRef getSpelling(SourceLocation loc,
-                              SmallVectorImpl<char> &buffer,
-                              bool *invalid = 0) const {
+                        SmallVectorImpl<char> &buffer,
+                        bool *invalid = 0) const {
     return Lexer::getSpelling(loc, buffer, SourceMgr, LangOpts, invalid);
   }
 
@@ -1207,6 +1214,10 @@ public:
   
   /// \brief Allocate a new MacroInfo object with the provided SourceLocation.
   MacroInfo *AllocateMacroInfo(SourceLocation L);
+
+  /// \brief Allocate a new MacroInfo object loaded from an AST file.
+  MacroInfo *AllocateDeserializedMacroInfo(SourceLocation L,
+                                           unsigned SubModuleID);
 
   /// \brief Turn the specified lexer token into a fully checked and spelled
   /// filename, e.g. as an operand of \#include. 
