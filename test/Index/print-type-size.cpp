@@ -74,6 +74,13 @@ struct Test2 {
           int foobar;
         };
     };
+    struct inner {
+        struct {
+//CHECK64: FieldDecl=mybar:[[@LINE+1]]:15 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=0]
+          int mybar;
+        };
+//CHECK64: FieldDecl=mole:[[@LINE+1]]:7 (Definition) [type=struct inner] [typekind=Unexposed] [sizeof=4] [alignof=4] [offsetof=96]
+    } mole;
   };
 };
 
@@ -285,7 +292,6 @@ void f(int i) {
 //CHECK32: FieldDecl=f2:[[@LINE+1]]:11 (Definition) [type=float] [typekind=Float] [sizeof=4] [alignof=4] [offsetof=0]
     float f2;
    };
-   
    }
 }
 
@@ -346,7 +352,7 @@ struct Test {
   };
 };
 #define offsetof(type, member)  __builtin_offsetof (type, member)
- 
+
 static_assert(offsetof(struct Test,foo) == 0, "anonymous struct should work");
 
 

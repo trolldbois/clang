@@ -2900,7 +2900,7 @@ CINDEX_LINKAGE long long clang_getArraySize(CXType T);
 
 /**
  * \brief List the possible error codes for \c clang_Type_getSizeOf,
- *   \c clang_Type_getAlignOf, \c clang_Type_getOffsetOf and 
+ *   \c clang_Type_getAlignOf, \c clang_Type_getOffsetOf and
  *   \c clang_Cursor_getOffsetOf.
  *
  * A value of this enumeration type can be returned if the target type is not
@@ -2968,13 +2968,13 @@ CINDEX_LINKAGE long long clang_Type_getSizeOf(CXType T);
  *
  * If the cursor is not a record field declaration, CXTypeLayoutError_Invalid
  *   is returned.
- * If the field's type declaration is an incomplete type, 
+ * If the field's type declaration is an incomplete type,
  *   CXTypeLayoutError_Incomplete is returned.
- * If the field's type declaration is a dependent type, 
+ * If the field's type declaration is a dependent type,
  *   CXTypeLayoutError_Dependent is returned.
  * If the field's type declaration is not a constant size type,
  *   CXTypeLayoutError_NotConstantSize is returned.
- * If in the record there is another field's type declaration that is 
+ * If in the record there is another field's type declaration that is
  *   an incomplete type, CXTypeLayoutError_IncompleteFieldParent is returned.
  * If in the record there is another field's type declaration that is
  *   a dependent type, CXTypeLayoutError_DependentFieldParent is returned.
@@ -2985,7 +2985,7 @@ CINDEX_LINKAGE long long clang_Type_getOffsetOf(CXType T, const char *S);
  * \brief Returns 1 if the cursor specifies a Record member that is a bitfield.
  */
 CINDEX_LINKAGE unsigned clang_Cursor_isBitField(CXCursor C);
-    
+
 /**
  * \brief Returns 1 if the base class specified by the cursor with kind
  *   CX_CXXBaseSpecifier is virtual.

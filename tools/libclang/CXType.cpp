@@ -708,7 +708,7 @@ static long long getOffsetOfFieldDecl(const FieldDecl * FD) {
     return CXTypeLayoutError_Incomplete;
   if (QT->isDependentType())
     return CXTypeLayoutError_Dependent;
-  // we also need to validate the parent record type, in case another field 
+  // we also need to validate the parent record type, in case another field
   // in the record in incorrect, thereby making the record non suitable.
   const RecordDecl * PD = FD->getParent();
   for (RecordDecl::field_iterator I = PD->field_begin(), E = PD->field_end();
@@ -731,7 +731,7 @@ static long long getOffsetOfFieldDecl(const FieldDecl * FD) {
 static long long visitRecordForNamedField(const RecordDecl * RD, StringRef FieldName) {
   for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
        I != E; ++I) {
-    // handle normal fieldname, fieldname == '' == anonymous record, and 
+    // handle normal fieldname, fieldname == '' == anonymous record, and
     // field name in a anonymous record
     if ( FieldName.equals((*I)->getName()) ) {
       return getOffsetOfFieldDecl((*I));
@@ -750,9 +750,9 @@ static long long visitRecordForNamedField(const RecordDecl * RD, StringRef Field
             return Offset+ParentOffset;
         }
       } // else try next field
-    } 
+    }
   }
-  return CXTypeLayoutError_InvalidFieldName; 
+  return CXTypeLayoutError_InvalidFieldName;
 }
 
 long long clang_Type_getOffsetOf(CXType PT, const char* S) {
