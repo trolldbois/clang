@@ -1179,10 +1179,12 @@ static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
         Root = Parent;
         RootParentName = clang_getCString(clang_getCursorSpelling(Root));
         Parent = clang_getCursorSemanticParent(Root);
-      } while ( clang_getCursorType(Parent).kind == CXType_Record && !strcmp(RootParentName, "") );
+      } while ( clang_getCursorType(Parent).kind == CXType_Record && 
+                !strcmp(RootParentName, "") );
       /* if RootParentName is "", record is anonymous. */
       {
-        long long Offset = clang_Type_getOffsetOf(clang_getCursorType(Root), FieldName);
+        long long Offset = clang_Type_getOffsetOf(clang_getCursorType(Root), 
+                                                  FieldName);
         printf(" [offsetof=%lld]", Offset);
       }
     }
