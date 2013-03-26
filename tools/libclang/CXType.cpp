@@ -699,7 +699,7 @@ long long clang_Type_getSizeOf(CXType T) {
   return Ctx.getTypeSizeInChars(QT).getQuantity();
 }
 
-static long long getOffsetOfFieldDecl(const FieldDecl * FD) {
+static long long getOffsetOfFieldDecl(const FieldDecl *FD) {
   if (!FD)
     return CXTypeLayoutError_Invalid;
   // we need to validate the Field's QualType before calling Ctx.getFieldOffset
@@ -728,24 +728,26 @@ static long long getOffsetOfFieldDecl(const FieldDecl * FD) {
   return Ctx.getFieldOffset(FD);
 }
 
-static long long visitRecordForNamedField(const RecordDecl * RD, StringRef FieldName) {
+static long long visitRecordForNamedField(const RecordDecl *RD, 
+                                          StringRef FieldName) {
   for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
        I != E; ++I) {
     // handle normal fieldname, fieldname == '' == anonymous record, and
     // field name in a anonymous record
-    if ( FieldName.equals((*I)->getName()) ) {
+    if (FieldName.equals((*I)->getName())) {
       return getOffsetOfFieldDecl((*I));
-    } else if ((*I)->isAnonymousStructOrUnion()){
-      if (const RecordDecl *Child = (*I)->getType()->getAs<RecordType>()->getDecl() ){
+    } else if ((*I)->isAnonymousStructOrUnion()) {
+      const RecordType *ChildType = (*I)->getType()->getAs<RecordType>();
+      if (const RecordDecl *Child = ChildType->getDecl()) {
         long long Offset = visitRecordForNamedField(Child, FieldName);
-        if ( Offset == CXTypeLayoutError_InvalidFieldName ){
+        if (Offset == CXTypeLayoutError_InvalidFieldName) {
             continue;
-        } else if ( Offset < 0) {
+        } else if (Offset < 0) {
             return Offset;
         } else {
             // result is relative to anonymous struct offset
             long long ParentOffset = getOffsetOfFieldDecl((*I));
-            if ( ParentOffset < 0 )
+            if (ParentOffset < 0)
                 return ParentOffset;
             return Offset+ParentOffset;
         }
@@ -755,7 +757,7 @@ static long long visitRecordForNamedField(const RecordDecl * RD, StringRef Field
   return CXTypeLayoutError_InvalidFieldName;
 }
 
-long long clang_Type_getOffsetOf(CXType PT, const char* S) {
+long long clang_Type_getOffsetOf(CXType PT, const char *S) {
   // get the parent record type declaration
   CXCursor PC = clang_getTypeDeclaration(PT);
   if (clang_isInvalid(PC.kind))
