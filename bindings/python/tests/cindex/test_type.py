@@ -300,7 +300,8 @@ def test_is_restrict_qualified():
     assert not j.type.is_restrict_qualified()
 
 def test_record_layout():
-    """Ensure Cursor.type.get_size, Cursor.type.get_align and Cursor.type.get_offset works."""
+    """Ensure Cursor.type.get_size, Cursor.type.get_align and 
+    Cursor.type.get_offset works."""
 
     source ="""
 struct a {
@@ -335,7 +336,7 @@ struct a {
         assert fields[3].is_bitfield() == False
 
 def test_offset():
-    """Ensure Cursor.get_record_field_offset works in anonymous structs/union."""
+    """Ensure Cursor.get_record_field_offset works in anonymous records"""
     source="""
 struct Test {
   struct {
