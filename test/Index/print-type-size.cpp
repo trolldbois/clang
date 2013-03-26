@@ -320,39 +320,3 @@ struct lastValid {
 };
 
 }
-
-
-static_assert(alignof(void(void)) == 1, "alignof(function type) should be 1");
-static_assert(alignof(void(void)) != 4, "alignof(function type) should not be 4");
-static_assert(alignof(void) == 1, "alignof(void) should be 1");
-
-static_assert(sizeof(void(void)) == 1, "sizeof(function type) should be 1");
-static_assert(sizeof(void) == 1, "sizeof(void) should be 1");
-
-
-class C;
-class D {
-  C* c1;
-};
-class C {
-  int c;
-};
-
-C c1;
-D d1;
-
-static_assert(sizeof(c1) == 4, "sizeof(C) should be 4");
-static_assert(sizeof(d1) == sizeof(long), "sizeof(D) should be sizeof long");
-
-struct Test {
-  struct {
-    union {
-      int foo;
-    };
-  };
-};
-#define offsetof(type, member)  __builtin_offsetof (type, member)
-
-static_assert(offsetof(struct Test,foo) == 0, "anonymous struct should work");
-
-
