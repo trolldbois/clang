@@ -728,7 +728,7 @@ static long long getOffsetOfFieldDecl(const FieldDecl *FD) {
   return Ctx.getFieldOffset(FD);
 }
 
-static long long visitRecordForNamedField(const RecordDecl *RD, 
+static long long visitRecordForNamedField(const RecordDecl *RD,
                                           StringRef FieldName) {
   for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
        I != E; ++I) {

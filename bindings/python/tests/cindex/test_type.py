@@ -300,7 +300,7 @@ def test_is_restrict_qualified():
     assert not j.type.is_restrict_qualified()
 
 def test_record_layout():
-    """Ensure Cursor.type.get_size, Cursor.type.get_align and 
+    """Ensure Cursor.type.get_size, Cursor.type.get_align and
     Cursor.type.get_offset works."""
 
     source ="""
