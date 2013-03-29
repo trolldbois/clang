@@ -1389,7 +1389,7 @@ void Sema::ActOnPopScope(SourceLocation Loc, Scope *S) {
     if (!D->getDeclName()) continue;
 
     // Diagnose unused variables in this scope.
-    if (!S->hasErrorOccurred())
+    if (!S->hasUnrecoverableErrorOccurred())
       DiagnoseUnusedDecl(D);
     
     // If this was a forward reference to a label, verify it was defined.
@@ -3175,6 +3175,8 @@ Decl *Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS,
     if (DS.getTypeQualifiers() & DeclSpec::TQ_volatile)
       Diag(DS.getConstSpecLoc(), DiagID) << "volatile";
     // Restrict is covered above.
+    if (DS.getTypeQualifiers() & DeclSpec::TQ_atomic)
+      Diag(DS.getAtomicSpecLoc(), DiagID) << "_Atomic";
   }
 
   // Warn about ignored type attributes, for example:
@@ -3411,18 +3413,23 @@ Decl *Sema::BuildAnonymousStructOrUnion(Scope *S, DeclSpec &DS,
     if (DS.getTypeQualifiers()) {
       if (DS.getTypeQualifiers() & DeclSpec::TQ_const)
         Diag(DS.getConstSpecLoc(), diag::ext_anonymous_struct_union_qualified)
-          << Record->isUnion() << 0 
+          << Record->isUnion() << "const"
           << FixItHint::CreateRemoval(DS.getConstSpecLoc());
       if (DS.getTypeQualifiers() & DeclSpec::TQ_volatile)
-        Diag(DS.getVolatileSpecLoc(), 
+        Diag(DS.getVolatileSpecLoc(),
              diag::ext_anonymous_struct_union_qualified)
-          << Record->isUnion() << 1
+          << Record->isUnion() << "volatile"
           << FixItHint::CreateRemoval(DS.getVolatileSpecLoc());
       if (DS.getTypeQualifiers() & DeclSpec::TQ_restrict)
-        Diag(DS.getRestrictSpecLoc(), 
+        Diag(DS.getRestrictSpecLoc(),
              diag::ext_anonymous_struct_union_qualified)
-          << Record->isUnion() << 2 
+          << Record->isUnion() << "restrict"
           << FixItHint::CreateRemoval(DS.getRestrictSpecLoc());
+      if (DS.getTypeQualifiers() & DeclSpec::TQ_atomic)
+        Diag(DS.getAtomicSpecLoc(),
+             diag::ext_anonymous_struct_union_qualified)
+          << Record->isUnion() << "_Atomic"
+          << FixItHint::CreateRemoval(DS.getAtomicSpecLoc());
 
       DS.ClearTypeQualifiers();
     }
@@ -7097,6 +7104,14 @@ namespace {
       Visit(Base);
     }
 
+    void VisitCXXOperatorCallExpr(CXXOperatorCallExpr *E) {
+      if (E->getNumArgs() > 0)
+        if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E->getArg(0)))
+          HandleDeclRefExpr(DRE);
+
+      Inherited::VisitCXXOperatorCallExpr(E);
+    }
+
     void VisitUnaryOperator(UnaryOperator *E) {
       // For POD record types, addresses of its own members are well-defined.
       if (E->getOpcode() == UO_AddrOf && isRecordType &&
@@ -7551,7 +7566,8 @@ void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init,
   } else if (VDecl->isFileVarDecl()) {
     if (VDecl->getStorageClassAsWritten() == SC_Extern &&
         (!getLangOpts().CPlusPlus ||
-         !Context.getBaseElementType(VDecl->getType()).isConstQualified()))
+         !(Context.getBaseElementType(VDecl->getType()).isConstQualified() ||
+           VDecl->isExternC())))
       Diag(VDecl->getLocation(), diag::warn_extern_init);
 
     // C99 6.7.8p4. All file scoped initializers need to be constant.
