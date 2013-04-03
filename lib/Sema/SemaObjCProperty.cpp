@@ -1136,6 +1136,7 @@ Decl *Sema::ActOnPropertyImplDecl(Scope *S,
       MarkDeclRefReferenced(SelfExpr);
       Expr *IvarRefExpr =
         new (Context) ObjCIvarRefExpr(Ivar, Ivar->getType(), PropertyDiagLoc,
+                                      Ivar->getLocation(),
                                       SelfExpr, true, true);
       ExprResult Res = 
         PerformCopyInitialization(InitializedEntity::InitializeResult(
@@ -1171,6 +1172,7 @@ Decl *Sema::ActOnPropertyImplDecl(Scope *S,
       MarkDeclRefReferenced(SelfExpr);
       Expr *lhs =
         new (Context) ObjCIvarRefExpr(Ivar, Ivar->getType(), PropertyDiagLoc,
+                                      Ivar->getLocation(),
                                       SelfExpr, true, true);
       ObjCMethodDecl::param_iterator P = setterMethod->param_begin();
       ParmVarDecl *Param = (*P);
@@ -1970,7 +1972,6 @@ void Sema::ProcessPropertyDecl(ObjCPropertyDecl *property,
                                                   property->getIdentifier(),
                                     property->getType().getUnqualifiedType(),
                                                   /*TInfo=*/0,
-                                                  SC_None,
                                                   SC_None,
                                                   0);
       SetterMethod->setMethodParams(Context, Argument,
