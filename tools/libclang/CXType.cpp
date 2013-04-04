@@ -748,10 +748,10 @@ long long clang_Type_getOffsetOf(CXType PT, const char *S) {
   IdentifierInfo *II = &Ctx.Idents.get(S);
   DeclarationName FieldName(II);
   RecordDecl::lookup_const_result Res = RD->lookup(FieldName);
-  // If a field of the parent record is incomplete, lookup will fail. 
+  // If a field of the parent record is incomplete, lookup will fail.
   // and we would return InvalidFieldName instead of Incomplete.
-  // But this erroneous results does protects again a hidden assertion failure 
-  // in the RecordLayoutBuilder 
+  // But this erroneous results does protects again a hidden assertion failure
+  // in the RecordLayoutBuilder
   if (Res.size() != 1)
     return CXTypeLayoutError_InvalidFieldName;
   if (const FieldDecl *FD = dyn_cast<FieldDecl>(Res.front()))

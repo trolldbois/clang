@@ -129,7 +129,7 @@ struct s1 {
   struct {
     struct forward_decl2 s1_g1;
 //CHECK64: FieldDecl=s1_e1:[[@LINE+1]]:9 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=-2]
-    int s1_e1; 
+    int s1_e1;
   } s1_x; // named record shows in s1->field_iterator
 //CHECK64: FieldDecl=s1_e3:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=-2]
   int s1_e3;
@@ -138,7 +138,7 @@ struct s1 {
 // incomplete not in root level, in anonymous record
 struct s1b {
   struct {
-    struct forward_decl2 s1b_g1; 
+    struct forward_decl2 s1b_g1;
   }; // erroneous anonymous record does not show in s1b->field_iterator
 //CHECK64: FieldDecl=s1b_e2:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=0]
   int s1b_e2;
