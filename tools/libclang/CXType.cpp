@@ -724,10 +724,10 @@ static long long visitRecordForValidation(const RecordDecl *RD) {
 }
 
 
+/*
 static long long getOffsetOfFieldDecl(const RecordDecl *PD, const ValueDecl *FD) {
   if (!FD)
     return CXTypeLayoutError_Invalid;
-  /*
   // check that the field type is not incomplete/dependent
   QualType QT = FD->getType();
   if (QT->isIncompleteType())
@@ -771,18 +771,15 @@ static long long getOffsetOfFieldDecl(const RecordDecl *PD, const ValueDecl *FD)
       if (MQT->isDependentType())
         return CXTypeLayoutError_DependentParent;
   }
-  */
   // we can proceed without fear of an assert failure.
   ASTContext &Ctx = FD->getASTContext();
-  /*
   QualType PQT = Ctx.getRecordType(PD);
   if (PQT->isIncompleteType())
     return CXTypeLayoutError_IncompleteParent;
   if (PQT->isDependentType())
     return CXTypeLayoutError_DependentParent;
-  */
-  return Ctx.getFieldOffset(FD);
 }
+*/
 
 long long clang_Type_getOffsetOf(CXType PT, const char *S) {
   // check that PT is not incomplete/dependent
@@ -795,35 +792,33 @@ long long clang_Type_getOffsetOf(CXType PT, const char *S) {
     return CXTypeLayoutError_Invalid;
   RD = RD->getDefinition();
   if (!RD)
-    return CXTypeLayoutError_Incomplete;//Parent;
+    return CXTypeLayoutError_Incomplete;
   QualType RT = GetQualType(PT);
   if (RT->isIncompleteType())
-    return CXTypeLayoutError_Incomplete;//Parent;
+    return CXTypeLayoutError_Incomplete;
   if (RT->isDependentType())
-    return CXTypeLayoutError_Dependent;//Parent;
+    return CXTypeLayoutError_Dependent;
+  // We recurse into all record fields to detect incomplete and dependent types.
   long long Error = visitRecordForValidation(RD);
   if (Error < 0)
-    return Error; //FIXME error code same field versus parent error
-  
+    return Error;
   if (!S)
     return CXTypeLayoutError_InvalidFieldName;
   ASTContext &Ctx = cxtu::getASTUnit(GetTU(PT))->getASTContext();
   IdentifierInfo *II = &Ctx.Idents.get(S);
   DeclarationName FieldName(II);
   RecordDecl::lookup_const_result Res = RD->lookup(FieldName);
-  // FIXME: if a field of the root record is incomplete, lookup will fail, 
-  // and erroneously return invalidFieldName instead of IncompleteFieldParent.
+  // If a field of the parent record is incomplete, lookup will fail. 
+  // and we would return InvalidFieldName instead of Incomplete.
   // But this erroneous results does protects again a hidden assertion failure 
-  // that would occur because of nested incomplete records
+  // in the RecordLayoutBuilder 
   if (Res.size() != 1)
     return CXTypeLayoutError_InvalidFieldName;
   if (const FieldDecl *FD = dyn_cast<FieldDecl>(Res.front()))
-    return getOffsetOfFieldDecl(RD, FD);
+    return Ctx.getFieldOffset(FD);
   if (const IndirectFieldDecl *IFD = dyn_cast<IndirectFieldDecl>(Res.front()))
-    return getOffsetOfFieldDecl(RD, IFD);
-    //return Ctx.getFieldOffset(IFD); // Change getOffsetOfFieldDecl() to accept IFD.
-  // TODO FieldDecl * FD = IFD->getAnonField()
-
+    return Ctx.getFieldOffset(IFD);
+  // we don't want any other Decl Type.
   return CXTypeLayoutError_InvalidFieldName;
 }
 
