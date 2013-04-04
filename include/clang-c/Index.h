@@ -2928,15 +2928,7 @@ enum CXTypeLayoutError {
   /**
    * \brief The Field name is not valid for this record.
    */
-  CXTypeLayoutError_InvalidFieldName = -5,
-  /**
-   * \brief One field in the record is an incomplete Type.
-   */
-  CXTypeLayoutError_IncompleteFieldParent = -6,
-  /**
-   * \brief One field in the record is a dependent Type.
-   */
-  CXTypeLayoutError_DependentFieldParent = -7
+  CXTypeLayoutError_InvalidFieldName = -5
 };
 
 /**
@@ -2966,7 +2958,7 @@ CINDEX_LINKAGE long long clang_Type_getSizeOf(CXType T);
 
 /**
  * \brief Return the offset of a field named S in a record of type T in bits
- *   as it would be returned by __offsetof__.
+ *   as it would be returned by __offsetof__ as per C++11[18.2p4]
  *
  * If the cursor is not a record field declaration, CXTypeLayoutError_Invalid
  *   is returned.
@@ -2974,17 +2966,14 @@ CINDEX_LINKAGE long long clang_Type_getSizeOf(CXType T);
  *   CXTypeLayoutError_Incomplete is returned.
  * If the field's type declaration is a dependent type,
  *   CXTypeLayoutError_Dependent is returned.
- * If the field's type declaration is not a constant size type,
- *   CXTypeLayoutError_NotConstantSize is returned.
- * If in the record there is another field's type declaration that is
- *   an incomplete type, CXTypeLayoutError_IncompleteFieldParent is returned.
- * If in the record there is another field's type declaration that is
- *   a dependent type, CXTypeLayoutError_DependentFieldParent is returned.
+ * If the field's name S is not found,
+ *   CXTypeLayoutError_InvalidFieldName is returned.
  */
 CINDEX_LINKAGE long long clang_Type_getOffsetOf(CXType T, const char *S);
 
 /**
- * \brief Returns 1 if the cursor specifies a Record member that is a bitfield.
+ * \brief Returns non-zero if the cursor specifies a Record member that is a
+ *   bitfield.
  */
 CINDEX_LINKAGE unsigned clang_Cursor_isBitField(CXCursor C);
 
