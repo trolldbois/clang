@@ -701,9 +701,33 @@ long long clang_Type_getSizeOf(CXType T) {
 
 ////////////////////////////// NEW
 
+
+static long long visitRecordForValidation(const RecordDecl *RD) {
+  for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
+       I != E; ++I) {
+    QualType FQT = (*I)->getType();
+    if (FQT->isIncompleteType())
+      return CXTypeLayoutError_Incomplete;
+    if (FQT->isDependentType())
+      return CXTypeLayoutError_Dependent;
+    // recurse
+    if (const RecordType *ChildType = (*I)->getType()->getAs<RecordType>()){
+      if (const RecordDecl *Child = ChildType->getDecl()) {
+        long long ret = visitRecordForValidation(Child);
+        if (ret<0)
+          return ret;
+      } 
+    }
+    // else try next field
+  }
+  return 0;
+}
+
+
 static long long getOffsetOfFieldDecl(const RecordDecl *PD, const ValueDecl *FD) {
   if (!FD)
     return CXTypeLayoutError_Invalid;
+  /*
   // check that the field type is not incomplete/dependent
   QualType QT = FD->getType();
   if (QT->isIncompleteType())
@@ -743,18 +767,20 @@ static long long getOffsetOfFieldDecl(const RecordDecl *PD, const ValueDecl *FD)
        I != E; ++I) {
       QualType MQT = (*I)->getType();
       if (MQT->isIncompleteType())
-        return CXTypeLayoutError_IncompleteFieldParent;
+        return CXTypeLayoutError_IncompleteParent;
       if (MQT->isDependentType())
-        return CXTypeLayoutError_DependentFieldParent;
+        return CXTypeLayoutError_DependentParent;
   }
-  
+  */
   // we can proceed without fear of an assert failure.
   ASTContext &Ctx = FD->getASTContext();
+  /*
   QualType PQT = Ctx.getRecordType(PD);
   if (PQT->isIncompleteType())
-    return CXTypeLayoutError_IncompleteFieldParent;
+    return CXTypeLayoutError_IncompleteParent;
   if (PQT->isDependentType())
-    return CXTypeLayoutError_DependentFieldParent;
+    return CXTypeLayoutError_DependentParent;
+  */
   return Ctx.getFieldOffset(FD);
 }
 
@@ -769,12 +795,16 @@ long long clang_Type_getOffsetOf(CXType PT, const char *S) {
     return CXTypeLayoutError_Invalid;
   RD = RD->getDefinition();
   if (!RD)
-    return CXTypeLayoutError_IncompleteFieldParent;
+    return CXTypeLayoutError_Incomplete;//Parent;
   QualType RT = GetQualType(PT);
   if (RT->isIncompleteType())
-    return CXTypeLayoutError_IncompleteFieldParent;
+    return CXTypeLayoutError_Incomplete;//Parent;
   if (RT->isDependentType())
-    return CXTypeLayoutError_DependentFieldParent;
+    return CXTypeLayoutError_Dependent;//Parent;
+  long long Error = visitRecordForValidation(RD);
+  if (Error < 0)
+    return Error; //FIXME error code same field versus parent error
+  
   if (!S)
     return CXTypeLayoutError_InvalidFieldName;
   ASTContext &Ctx = cxtu::getASTUnit(GetTU(PT))->getASTContext();

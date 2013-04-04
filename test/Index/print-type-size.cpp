@@ -126,19 +126,18 @@ union f {
 // incomplete not in root level, in named record
 struct s1 {
   struct {
-    // breaks everything
-    //struct forward_decl2 s1_g1;
-    int s1_e1; // should return offsetof -6
-  } s1_x;
-  // source of offsetof crash
+    struct forward_decl2 s1_g1;
+    int s1_e1; 
+  } s1_x; // named record shows in s1->field_iterator
   int s1_e3;
 };
 
 // incomplete not in root level, in anonymous record
 struct s1b {
+  int s1b_etemp;
   struct {
-    struct forward_decl2 s1b_g1; // gives -5, should give -2
-  };
+    struct forward_decl2 s1b_g1; // gives -5, should give -2 (?)
+  }; // anonymous record does not show in s1b->field_iterator
   int s1b_e2;
 };
 
