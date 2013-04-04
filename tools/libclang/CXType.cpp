@@ -699,33 +699,43 @@ long long clang_Type_getSizeOf(CXType T) {
   return Ctx.getTypeSizeInChars(QT).getQuantity();
 }
 
-static long long getOffsetOfFieldDecl(const ValueDecl *FD) {
+static long long getOffsetOfFieldDecl(const RecordDecl *PD, const ValueDecl *FD) {
   if (!FD)
     return CXTypeLayoutError_Invalid;
-  // we need to validate the Field's QualType before calling Ctx.getFieldOffset
+  // check that the field type is not incomplete/dependent
   QualType QT = FD->getType();
   if (QT->isIncompleteType())
     return CXTypeLayoutError_Incomplete;
   if (QT->isDependentType())
     return CXTypeLayoutError_Dependent;
-  // find correct parent
+  // if the field is a recordDecl
+  // check that its fields are not incomplete/dependent  
+  if (const RecordType *RFT = FD->getType()->getAs<RecordType>()){
+    if (const RecordDecl *RFD = RFT->getDecl()){
+      for (RecordDecl::field_iterator I = RFD->field_begin(), 
+           E = RFD->field_end(); I != E; ++I) {
+        QualType CF = (*I)->getType();
+        if (CF->isIncompleteType())
+          return CXTypeLayoutError_Incomplete;
+        if (CF->isDependentType())
+          return CXTypeLayoutError_Dependent;
+      }
+    } else // should not occur
+      return CXTypeLayoutError_Invalid;
+  }
+  // find correct parent for anonymous records
+  /*
   const RecordDecl * PD;
-  if (const FieldDecl *FD2 = dyn_cast<FieldDecl>(FD))
+  if (const FieldDecl *FD2 = dyn_cast<FieldDecl>(FD)){
     PD = FD2->getParent();
-  if (const IndirectFieldDecl *IFD2 = dyn_cast<IndirectFieldDecl>(FD)) {
-    const RecordDecl *Temp_PD = IFD2->getAnonField()->getParent();
+  } else if (const IndirectFieldDecl *IFD2 = dyn_cast<IndirectFieldDecl>(FD)) { // FIXME CHECK THAT ELSE IF
+    // get the first non anonymous RecordDecl Parent 
     PD = IFD2->getAnonField()->getParent();
     do {
-      //PD = Temp_PD;
       PD = dyn_cast<RecordDecl>(PD->getParent()); 
-      //IFD2->getAnonField()->getParent();
     } while (PD->isAnonymousStructOrUnion());
-    // PD is the first non anonymous record ? or namespace FIXME
-    assert(PD);
   }
-  // we also need to validate the parent record type, in case another field
-  // in the record in incorrect, thereby making the record non suitable.
-  //const RecordDecl * PD; = FD->getParent();
+  // Check that the parent record is not incomplete/dependent
   for (RecordDecl::field_iterator I = PD->field_begin(), E = PD->field_end();
        I != E; ++I) {
       QualType MQT = (*I)->getType();
@@ -734,6 +744,8 @@ static long long getOffsetOfFieldDecl(const ValueDecl *FD) {
       if (MQT->isDependentType())
         return CXTypeLayoutError_DependentFieldParent;
   }
+  */
+  // we can proceed without fear of an assert failure.
   ASTContext &Ctx = FD->getASTContext();
   QualType PQT = Ctx.getRecordType(PD);
   if (PQT->isIncompleteType())
@@ -742,39 +754,9 @@ static long long getOffsetOfFieldDecl(const ValueDecl *FD) {
     return CXTypeLayoutError_DependentFieldParent;
   return Ctx.getFieldOffset(FD);
 }
-/*
-static long long visitRecordForNamedField(const RecordDecl *RD,
-                                          StringRef FieldName) {
-  for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
-       I != E; ++I) {
-    // handle normal fieldname, fieldname == '' == anonymous record, and
-    // field name in a anonymous record
-    if (FieldName.equals((*I)->getName())) {
-      return getOffsetOfFieldDecl((*I));
-    } else if ((*I)->isAnonymousStructOrUnion()) {
-      const RecordType *ChildType = (*I)->getType()->getAs<RecordType>();
-      if (const RecordDecl *Child = ChildType->getDecl()) {
-        long long Offset = visitRecordForNamedField(Child, FieldName);
-        if (Offset == CXTypeLayoutError_InvalidFieldName) {
-            continue;
-        } else if (Offset < 0) {
-            return Offset;
-        } else {
-            // result is relative to anonymous struct offset
-            long long ParentOffset = getOffsetOfFieldDecl((*I));
-            if (ParentOffset < 0)
-                return ParentOffset;
-            return Offset+ParentOffset;
-        }
-      } // else try next field
-    }
-  }
-  return CXTypeLayoutError_InvalidFieldName;
-}
-*/
+
 long long clang_Type_getOffsetOf(CXType PT, const char *S) {
-  // get the parent record type declaration
-  
+  // check that PT is not incomplete/dependent
   CXCursor PC = clang_getTypeDeclaration(PT);
   if (clang_isInvalid(PC.kind))
     return CXTypeLayoutError_Invalid;
@@ -790,24 +772,20 @@ long long clang_Type_getOffsetOf(CXType PT, const char *S) {
     return CXTypeLayoutError_IncompleteFieldParent;
   if (RT->isDependentType())
     return CXTypeLayoutError_DependentFieldParent;
-  /*
-  // iterate the fields to get the matching name
-  StringRef FieldName = StringRef(S);
-  return visitRecordForNamedField(RD, FieldName);
-  */
-
   if (!S)
     return CXTypeLayoutError_InvalidFieldName;
   ASTContext &Ctx = cxtu::getASTUnit(GetTU(PT))->getASTContext();
   IdentifierInfo *II = &Ctx.Idents.get(S);
   DeclarationName FieldName(II);
   RecordDecl::lookup_const_result Res = RD->lookup(FieldName);
+  // FIXME: if a field of the root record is incomplete, lookup will fail, 
+  // and erroneously return invalidFieldName instead of IncompleteFieldParent.
   if (Res.size() != 1)
     return CXTypeLayoutError_InvalidFieldName;
   if (const FieldDecl *FD = dyn_cast<FieldDecl>(Res.front()))
-    return getOffsetOfFieldDecl(FD);
+    return getOffsetOfFieldDecl(RD, FD);
   if (const IndirectFieldDecl *IFD = dyn_cast<IndirectFieldDecl>(Res.front()))
-    return getOffsetOfFieldDecl(IFD);
+    return getOffsetOfFieldDecl(RD, IFD);
     //return Ctx.getFieldOffset(IFD); // Change getOffsetOfFieldDecl() to accept IFD.
   // TODO FieldDecl * FD = IFD->getAnonField()
 
