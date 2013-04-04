@@ -1605,9 +1605,6 @@ static void filterNonConflictingPreviousDecls(ASTContext &context,
   if (previous.empty())
     return;
 
-  // If this declaration has external
-  bool hasExternalLinkage = decl->hasExternalLinkage();
-
   LookupResult::Filter filter = previous.makeFilter();
   while (filter.hasNext()) {
     NamedDecl *old = filter.next();
@@ -1617,7 +1614,19 @@ static void filterNonConflictingPreviousDecls(ASTContext &context,
       continue;
 
     // If either has no-external linkage, ignore the old declaration.
-    if (!hasExternalLinkage || old->getLinkage() != ExternalLinkage)
+    // If this declaration would have external linkage if it were the first
+    // declaration of this name, then it may in fact be a redeclaration of
+    // some hidden declaration, so include those too. We don't need to worry
+    // about some previous visible declaration giving this declaration external
+    // linkage, because in that case, we'll mark this declaration as a redecl
+    // of the visible decl, and that decl will already be a redecl of the
+    // hidden declaration if that's appropriate.
+    //
+    // Don't cache this linkage computation, because it's not yet correct: we
+    // may later give this declaration a previous declaration which changes
+    // its linkage.
+    if (old->getLinkage() != ExternalLinkage ||
+        !decl->hasExternalLinkageUncached())
       filter.erase();
   }
 
@@ -2919,8 +2928,8 @@ void Sema::MergeVarDecl(VarDecl *New, LookupResult &Previous,
     Diag(Old->getLocation(), diag::note_previous_definition);
     return New->setInvalidDecl();
   }
-  if (Old->hasExternalStorage() &&
-      New->isLocalVarDecl() && !New->hasLinkage()) {
+  if (Old->hasLinkage() && New->isLocalVarDecl() &&
+      !New->hasExternalStorage()) {
     Diag(New->getLocation(), diag::err_non_extern_extern) << New->getDeclName();
     Diag(Old->getLocation(), diag::note_previous_definition);
     return New->setInvalidDecl();

@@ -1,4 +1,5 @@
 // RUN: %clang_cc1 -fsyntax-only -verify %s
+// RUN: %clang_cc1 -fsyntax-only -verify -fmodules %s
 
 namespace test1 {
   int x; // expected-note {{previous definition is here}}
@@ -123,5 +124,13 @@ extern "C" {
   void test11_f() {
     void  __attribute__((overloadable)) test11_g(int);
     void  __attribute__((overloadable)) test11_g(double);
+  }
+}
+
+namespace test12 {
+  const int n = 0;
+  extern const int n;
+  void f() {
+    extern const int n;
   }
 }
