@@ -87,7 +87,24 @@ struct Test2 {
 }
 
 namespace Incomplete {
-// expect compilation error, not crash.
+// test that fields in incomplete named record do not crash
+union named {
+  struct forward_decl f1;
+//CHECK64: FieldDecl=f2:[[@LINE+1]]:7 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=-6]
+  int f2;
+  struct x {
+//CHECK64: FieldDecl=g1:[[@LINE+1]]:9 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=0]
+    int g1;
+//CHECK64: FieldDecl=f3:[[@LINE+1]]:5 (Definition) [type=struct x] [typekind=Unexposed] [sizeof=4] [alignof=4] [offsetof=-6]
+  } f3;
+  struct forward_decl f4;
+  struct x2{
+    int g2;
+    struct forward_decl g3;
+  } f5;
+};
+
+// test that fields in incomplete anonymous record do not crash
 union f {
 //CHECK64: FieldDecl=f1:[[@LINE+1]]:23 (Definition) [type=struct forward_decl] [typekind=Unexposed] [sizeof=-2] [alignof=-2] [offsetof=-2]
   struct forward_decl f1;
@@ -102,6 +119,89 @@ union f {
     };
 //CHECK64: FieldDecl=e3:[[@LINE+1]]:9 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=-6]
     int e3;
+  };
+};
+
+
+// incomplete not in root level, in named record
+struct s1 {
+  struct {
+    // breaks everything
+    //struct forward_decl2 s1_g1;
+    int s1_e1; // should return offsetof -6
+  } s1_x;
+  // source of offsetof crash
+  int s1_e3;
+};
+
+// incomplete not in root level, in anonymous record
+struct s1b {
+  struct {
+    struct forward_decl2 s1b_g1; // gives -5, should give -2
+  };
+  int s1b_e2;
+};
+
+struct s2 {
+  struct {
+    struct forward_decl2 s2_g1;
+// should be -6    
+    int s2_e1;
+  };
+  int s2_e3;
+};
+
+//deep anonymous with deep level incomplete
+struct s3 {
+  struct {
+    int s3_e1;
+    struct {
+      struct {
+        struct {
+          struct {
+           struct forward_decl2 s3_g1;
+          };
+        };
+      };
+    };
+    int s3_e3;
+  };
+};
+
+//deep anonymous with first level incomplete
+struct s4a {
+  struct forward_decl2 g1;
+  struct {
+   //struct forward_decl2 g1;
+    struct {
+      struct {
+        struct {
+          struct {
+            int s4_e1;
+          };
+        };
+      };
+    };
+    int s4_e3;
+  };
+};
+
+//deep anonymous with sub-first-level incomplete
+struct s4b {
+  struct {
+    struct forward_decl2 g1;
+    struct {
+      struct {
+        struct {
+          struct {
+// offsetof should be -6, not -5          
+//CHECK64: FieldDecl=e1:165:17 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=-6]
+            int s4b_e1;
+          };
+        };
+      };
+    };
+    int s4b_e3;
   };
 };
 

@@ -783,6 +783,8 @@ long long clang_Type_getOffsetOf(CXType PT, const char *S) {
   RecordDecl::lookup_const_result Res = RD->lookup(FieldName);
   // FIXME: if a field of the root record is incomplete, lookup will fail, 
   // and erroneously return invalidFieldName instead of IncompleteFieldParent.
+  // But this erroneous results does protects again a hidden assertion failure 
+  // that would occur because of nested incomplete records
   if (Res.size() != 1)
     return CXTypeLayoutError_InvalidFieldName;
   if (const FieldDecl *FD = dyn_cast<FieldDecl>(Res.front()))
