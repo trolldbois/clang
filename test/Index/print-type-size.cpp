@@ -115,7 +115,7 @@ union f {
 //CHECK64: FieldDecl=e1:[[@LINE+1]]:9 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=-2]
     int e1;
     struct {
-//CHECK64: FieldDecl=g1:[[@LINE+1]]:28 (Definition) [type=struct forward_decl2] [typekind=Unexposed] [sizeof=-2] [alignof=-2] [offsetof=-5]
+//CHECK64: FieldDecl=g1:[[@LINE+1]]:28 (Definition) [type=struct forward_decl2] [typekind=Unexposed] [sizeof=-2] [alignof=-2] [offsetof=-2]
       struct forward_decl2 g1;
     };
 //CHECK64: FieldDecl=e3:[[@LINE+1]]:9 (Definition) [type=int] [typekind=Int] [sizeof=4] [alignof=4] [offsetof=-2]
