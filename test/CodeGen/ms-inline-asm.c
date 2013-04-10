@@ -310,7 +310,7 @@ void t26() {
 void t27() {
   __asm mov eax, fs:[0h]
 // CHECK: t27
-// CHECK: call void asm sideeffect inteldialect "mov eax, fs:[0h]", "~{eax},~{dirflag},~{fpsr},~{flags}"()
+// CHECK: call void asm sideeffect inteldialect "mov eax, fs:[$$0h]", "~{eax},~{dirflag},~{fpsr},~{flags}"()
 }
 
 void t28() {
@@ -389,4 +389,19 @@ void t34() {
 // CHECK: t34
 // CHECK: call void asm sideeffect inteldialect "prefetchnta $$64[eax]", "~{dirflag},~{fpsr},~{flags}"()
 // CHECK: call void asm sideeffect inteldialect "mov eax, dword ptr $$4[eax]", "~{eax},~{dirflag},~{fpsr},~{flags}"()
+}
+
+void t35() {
+  __asm prefetchnta [eax + (200*64)]
+  __asm mov eax, dword ptr [eax + (200*64)]
+// CHECK: t35
+// CHECK: call void asm sideeffect inteldialect "prefetchnta [eax + ($$200*$$64)]", "~{dirflag},~{fpsr},~{flags}"()
+// CHECK: call void asm sideeffect inteldialect "mov eax, dword ptr [eax + ($$200*$$64)]", "~{eax},~{dirflag},~{fpsr},~{flags}"()
+}
+
+void t36() {
+  int arr[4];
+  __asm mov eax, 4[arr]
+// CHECK: t36
+// CHECK: call void asm sideeffect inteldialect "mov eax, dword ptr $$4$0", "*m,~{eax},~{dirflag},~{fpsr},~{flags}"([4 x i32]* %arr)
 }
