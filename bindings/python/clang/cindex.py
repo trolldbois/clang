@@ -1028,6 +1028,7 @@ CursorKind.CXX_FINAL_ATTR = CursorKind(404)
 CursorKind.CXX_OVERRIDE_ATTR = CursorKind(405)
 CursorKind.ANNOTATE_ATTR = CursorKind(406)
 CursorKind.ASM_LABEL_ATTR = CursorKind(407)
+CursorKind.PACKED_ATTR = CursorKind(408)
 
 ###
 # Preprocessing
