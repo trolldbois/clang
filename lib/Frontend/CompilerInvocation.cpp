@@ -68,6 +68,9 @@ static unsigned getOptimizationLevel(ArgList &Args, InputKind IK,
     if (A->getOption().matches(options::OPT_O0))
       return 0;
 
+    if (A->getOption().matches(options::OPT_Ofast))
+      return 3;
+
     assert (A->getOption().matches(options::OPT_O));
 
     StringRef S(A->getValue());
@@ -80,8 +83,7 @@ static unsigned getOptimizationLevel(ArgList &Args, InputKind IK,
   return DefaultOpt;
 }
 
-static unsigned getOptimizationLevelSize(ArgList &Args, InputKind IK,
-                                         DiagnosticsEngine &Diags) {
+static unsigned getOptimizationLevelSize(ArgList &Args) {
   if (Arg *A = Args.getLastArg(options::OPT_O_Group)) {
     if (A->getOption().matches(options::OPT_O)) {
       switch (A->getValue()[0]) {
@@ -95,6 +97,13 @@ static unsigned getOptimizationLevelSize(ArgList &Args, InputKind IK,
     }
   }
   return 0;
+}
+
+static bool isOptimizationLevelFast(ArgList &Args) {
+  if (Arg *A = Args.getLastArg(options::OPT_O_Group))
+    if (A->getOption().matches(options::OPT_Ofast))
+      return true;
+  return false;
 }
 
 static void addWarningArgs(ArgList &Args, std::vector<std::string> &Warnings) {
@@ -281,6 +290,7 @@ static bool ParseMigratorArgs(MigratorOptions &Opts, ArgList &Args) {
 
 static void ParseCommentArgs(CommentOptions &Opts, ArgList &Args) {
   Opts.BlockCommandNames = Args.getAllArgValues(OPT_fcomment_block_commands);
+  Opts.ParseAllComments = Args.hasArg(OPT_fparse_all_comments);
 }
 
 static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
@@ -323,13 +333,14 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.ForbidGuardVariables = Args.hasArg(OPT_fforbid_guard_variables);
   Opts.UseRegisterSizedBitfieldAccess = Args.hasArg(
     OPT_fuse_register_sized_bitfield_access);
-  Opts.RelaxedAliasing = Args.hasArg(OPT_relaxed_aliasing);
+  Opts.RelaxedAliasing = Args.hasArg(OPT_relaxed_aliasing) ||
+    isOptimizationLevelFast(Args);
   Opts.StructPathTBAA = Args.hasArg(OPT_struct_path_tbaa);
   Opts.DwarfDebugFlags = Args.getLastArgValue(OPT_dwarf_debug_flags);
   Opts.MergeAllConstants = !Args.hasArg(OPT_fno_merge_all_constants);
   Opts.NoCommon = Args.hasArg(OPT_fno_common);
   Opts.NoImplicitFloat = Args.hasArg(OPT_no_implicit_float);
-  Opts.OptimizeSize = getOptimizationLevelSize(Args, IK, Diags);
+  Opts.OptimizeSize = getOptimizationLevelSize(Args);
   Opts.SimplifyLibCalls = !(Args.hasArg(OPT_fno_builtin) ||
                             Args.hasArg(OPT_ffreestanding));
   Opts.UnrollLoops = Args.hasArg(OPT_funroll_loops) ||
@@ -1292,7 +1303,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
 
   // FIXME: Eliminate this dependency.
   unsigned Opt = getOptimizationLevel(Args, IK, Diags),
-       OptSize = getOptimizationLevelSize(Args, IK, Diags);
+       OptSize = getOptimizationLevelSize(Args);
   Opts.Optimize = Opt != 0;
   Opts.OptimizeSize = OptSize != 0;
 
@@ -1301,7 +1312,8 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   // inlining enabled.
   Opts.NoInlineDefine = !Opt || Args.hasArg(OPT_fno_inline);
 
-  Opts.FastMath = Args.hasArg(OPT_ffast_math);
+  Opts.FastMath = Args.hasArg(OPT_ffast_math) ||
+    isOptimizationLevelFast(Args);
   Opts.FiniteMathOnly = Args.hasArg(OPT_ffinite_math_only);
 
   Opts.RetainCommentsFromSystemHeaders =

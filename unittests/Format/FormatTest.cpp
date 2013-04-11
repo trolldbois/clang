@@ -954,6 +954,7 @@ TEST_F(FormatTest, DoesNotBreakSemiAfterClassDecl) {
 TEST_F(FormatTest, UnderstandsAccessSpecifiers) {
   verifyFormat("class A {\n"
                "public:\n"
+               "public: // comment\n"
                "protected:\n"
                "private:\n"
                "  void f() {}\n"
@@ -3731,6 +3732,20 @@ TEST_F(FormatTest, DoNotBreakStringLiteralsInEscapeSequence) {
             format("\"test\\000000000001\"", getLLVMStyleWithColumns(10)));
   EXPECT_EQ("R\"(\\x\\x00)\"\n",
             format("R\"(\\x\\x00)\"\n", getLLVMStyleWithColumns(7)));
+}
+
+TEST_F(FormatTest, DoNotCreateUnreasonableUnwrappedLines) {
+  verifyFormat("void f() {\n"
+               "  return g() {}\n"
+               "  void h() {}");
+  verifyFormat("if (foo)\n"
+               "  return { forgot_closing_brace();\n"
+               "test();");
+  verifyFormat("int a[] = { void forgot_closing_brace()\n"
+               "{\n"
+               "  f();\n"
+               "  g();\n"
+               "}");
 }
 
 } // end namespace tooling
