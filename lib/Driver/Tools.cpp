@@ -3294,6 +3294,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   // Forward -fcomment-block-commands to -cc1.
   Args.AddAllArgs(CmdArgs, options::OPT_fcomment_block_commands);
+  // Forward -fparse-all-comments to -cc1.
+  Args.AddAllArgs(CmdArgs, options::OPT_fparse_all_comments);
 
   // Forward -Xclang arguments to -cc1, and -mllvm arguments to the LLVM option
   // parser.
@@ -3669,6 +3671,14 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec = getToolChain().getDriver().getClangProgramPath();
   C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+
+  // Handle the debug info splitting at object creation time if we're
+  // creating an object.
+  // TODO: Currently only works on linux with newer objcopy.
+  if (Args.hasArg(options::OPT_gsplit_dwarf) &&
+      (getToolChain().getTriple().getOS() == llvm::Triple::Linux))
+    SplitDebugInfo(getToolChain(), C, *this, JA, Args, Output,
+                   SplitDebugName(Args, Inputs));
 }
 
 void gcc::Common::ConstructJob(Compilation &C, const JobAction &JA,
