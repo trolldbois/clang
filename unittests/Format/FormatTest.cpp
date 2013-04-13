@@ -430,6 +430,7 @@ TEST_F(FormatTest, FormatsSwitchStatement) {
   verifyFormat("switch (x) {\n"
                "default: {\n"
                "  // Do nothing.\n"
+               "}\n"
                "}");
   verifyFormat("switch (x) {\n"
                "// comment\n"
@@ -1199,8 +1200,8 @@ TEST_F(FormatTest, FormatsSmallMacroDefinitionsInSingleLine) {
 
 TEST_F(FormatTest, DoesNotBreakPureVirtualFunctionDefinition) {
   verifyFormat(
-      "virtual void\n"
-      "write(ELFWriter *writerrr, OwningPtr<FileOutputBuffer> &buffer) = 0;");
+      "virtual void write(ELFWriter *writerrr,\n"
+      "                   OwningPtr<FileOutputBuffer> &buffer) = 0;");
 }
 
 TEST_F(FormatTest, LayoutUnknownPPDirective) {
@@ -1700,6 +1701,56 @@ TEST_F(FormatTest, BreaksAsHighAsPossible) {
                "    Intervals[i - 1].getRange().getLast()) {\n}");
 }
 
+TEST_F(FormatTest, BreaksFunctionDeclarations) {
+  // Principially, we break function declarations in a certain order:
+  // 1) break amongst arguments.
+  verifyFormat("Aaaaaaaaaaaaaa bbbbbbbbbbbbbb(Cccccccccccccc cccccccccccccc,\n"
+               "                              Cccccccccccccc cccccccccccccc);");
+
+  // 2) break after return type.
+  verifyFormat("Aaaaaaaaaaaaaaaaaaaaaaaa\n"
+               "bbbbbbbbbbbbbb(Cccccccccccccc cccccccccccccccccccccccccc);");
+
+  // 3) break after (.
+  verifyFormat(
+      "Aaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbb(\n"
+      "    Cccccccccccccccccccccccccccccc cccccccccccccccccccccccccccccccc);");
+
+  // 4) break before after nested name specifiers.
+  verifyFormat(
+      "Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+      "SomeClasssssssssssssssssssssssssssssssssssssss::\n"
+      "    bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb(Cccccccccccccc cccccccccc);");
+
+  // However, there are exceptions, if a sufficient amount of lines can be
+  // saved.
+  // FIXME: The precise cut-offs wrt. the number of saved lines might need some
+  // more adjusting.
+  verifyFormat("Aaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbb(Cccccccccccccc cccccccccc,\n"
+               "                                  Cccccccccccccc cccccccccc,\n"
+               "                                  Cccccccccccccc cccccccccc,\n"
+               "                                  Cccccccccccccc cccccccccc,\n"
+               "                                  Cccccccccccccc cccccccccc);");
+  verifyFormat(
+      "Aaaaaaaaaaaaaaaaaa\n"
+      "bbbbbbbbbbbbbb(Cccccccccccccc cccccccccc, Cccccccccccccc cccccccccc,\n"
+      "               Cccccccccccccc cccccccccc, Cccccccccccccc cccccccccc,\n"
+      "               Cccccccccccccc cccccccccc, Cccccccccccccc cccccccccc);");
+  verifyFormat(
+      "Aaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb(Cccccccccccccc cccccccccc,\n"
+      "                                          Cccccccccccccc cccccccccc,\n"
+      "                                          Cccccccccccccc cccccccccc,\n"
+      "                                          Cccccccccccccc cccccccccc,\n"
+      "                                          Cccccccccccccc cccccccccc,\n"
+      "                                          Cccccccccccccc cccccccccc,\n"
+      "                                          Cccccccccccccc cccccccccc);");
+  verifyFormat("Aaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb(\n"
+               "    Cccccccccccccc cccccccccc, Cccccccccccccc cccccccccc,\n"
+               "    Cccccccccccccc cccccccccc, Cccccccccccccc cccccccccc,\n"
+               "    Cccccccccccccc cccccccccc, Cccccccccccccc cccccccccc,\n"
+               "    Cccccccccccccc cccccccccc, Cccccccccccccc cccccccccc);");
+}
+
 TEST_F(FormatTest, BreaksDesireably) {
   verifyFormat("if (aaaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaa) ||\n"
                "    aaaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaa) ||\n"
@@ -1850,7 +1901,7 @@ TEST_F(FormatTest, DoesNotBreakTrailingAnnotation) {
       "                   aaaaaaaaaaaaaaaaaaaaaaaaa));");
   verifyFormat("bool aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
                "    __attribute__((unused));");
-  
+
   // FIXME: This is bad indentation, but generally hard to distinguish from a
   // function declaration.
   verifyFormat(
@@ -2374,6 +2425,7 @@ TEST_F(FormatTest, UndestandsOverloadedOperators) {
                "               const aaaaaaaaaaaaaaaaaaaaa &right) {\n"
                "  return left.group < right.group;\n"
                "}");
+  verifyFormat("SomeType &operator=(const SomeType &S);");
 
   verifyGoogleFormat("operator void*();");
   verifyGoogleFormat("operator SomeType<SomeType<int>>();");
@@ -2599,9 +2651,9 @@ TEST_F(FormatTest, BreaksLongDeclarations) {
   verifyFormat("int *someFunction(int LoooooooooooooooooooongParam1,\n"
                "                  int LoooooooooooooooooooongParam2) {}");
   verifyFormat(
-      "TypeSpecDecl *\n"
-      "TypeSpecDecl::Create(ASTContext &C, DeclContext *DC, SourceLocation L,\n"
-      "                     IdentifierIn *II, Type *T) {}");
+      "TypeSpecDecl *TypeSpecDecl::Create(ASTContext &C, DeclContext *DC,\n"
+      "                                   SourceLocation L, IdentifierIn *II,\n"
+      "                                   Type *T) {}");
   verifyFormat("ReallyLongReturnType<TemplateParam1, TemplateParam2>\n"
                "ReallyReallyLongFunctionName(\n"
                "    const std::string &SomeParameter,\n"
@@ -3512,8 +3564,18 @@ TEST_F(FormatTest, ObjCLiterals) {
   verifyFormat("@{ @\"one\" : @1 }");
   verifyFormat("return @{ @\"one\" : @1 };");
   verifyFormat("@{ @\"one\" : @1, }");
-  verifyFormat("@{ @\"one\" : @{ @2 : @1 } }");
-  verifyFormat("@{ @\"one\" : @{ @2 : @1 }, }");
+
+  // FIXME: Breaking in cases where we think there's a structural error
+  // showed that we're incorrectly parsing this code. We need to fix the
+  // parsing here.
+  verifyFormat("@{ @\"one\" : @\n"
+               "{ @2 : @1 }\n"
+               "}");
+  verifyFormat("@{ @\"one\" : @\n"
+               "{ @2 : @1 }\n"
+               ",\n"
+               "}");
+
   verifyFormat("@{ 1 > 2 ? @\"one\" : @\"two\" : 1 > 2 ? @1 : @2 }");
   verifyFormat("[self setDict:@{}");
   verifyFormat("[self setDict:@{ @1 : @2 }");
