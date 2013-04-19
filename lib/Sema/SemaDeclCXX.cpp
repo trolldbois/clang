@@ -633,25 +633,11 @@ void Sema::CheckCXXDefaultArguments(FunctionDecl *FD) {
   unsigned NumParams = FD->getNumParams();
   unsigned p;
 
-  bool IsLambda = FD->getOverloadedOperator() == OO_Call &&
-                  isa<CXXMethodDecl>(FD) &&
-                  cast<CXXMethodDecl>(FD)->getParent()->isLambda();
-              
   // Find first parameter with a default argument
   for (p = 0; p < NumParams; ++p) {
     ParmVarDecl *Param = FD->getParamDecl(p);
-    if (Param->hasDefaultArg()) {
-      // C++11 [expr.prim.lambda]p5:
-      //   [...] Default arguments (8.3.6) shall not be specified in the 
-      //   parameter-declaration-clause of a lambda-declarator.
-      //
-      // FIXME: Core issue 974 strikes this sentence, we only provide an
-      // extension warning.
-      if (IsLambda)
-        Diag(Param->getLocation(), diag::ext_lambda_default_arguments)
-          << Param->getDefaultArgRange();
+    if (Param->hasDefaultArg())
       break;
-    }
   }
 
   // C++ [dcl.fct.default]p4:
@@ -1603,6 +1589,13 @@ static bool InitializationHasSideEffects(const FieldDecl &FD) {
   return false;
 }
 
+static AttributeList *getMSPropertyAttr(AttributeList *list) {
+  for (AttributeList* it = list; it != 0; it = it->getNext())
+    if (it->isDeclspecPropertyAttribute())
+      return it;
+  return 0;
+}
+
 /// ActOnCXXMemberDeclarator - This is invoked when a C++ class member
 /// declarator is parsed. 'AS' is the access specifier, 'BW' specifies the
 /// bitfield width if there is one, 'InitExpr' specifies the initializer if
@@ -1679,30 +1672,24 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
   // data members and cannot be applied to names declared const or static,
   // and cannot be applied to reference members.
   switch (DS.getStorageClassSpec()) {
-    case DeclSpec::SCS_unspecified:
-    case DeclSpec::SCS_typedef:
-    case DeclSpec::SCS_static:
-      // FALL THROUGH.
-      break;
-    case DeclSpec::SCS_mutable:
-      if (isFunc) {
-        if (DS.getStorageClassSpecLoc().isValid())
-          Diag(DS.getStorageClassSpecLoc(), diag::err_mutable_function);
-        else
-          Diag(DS.getThreadSpecLoc(), diag::err_mutable_function);
+  case DeclSpec::SCS_unspecified:
+  case DeclSpec::SCS_typedef:
+  case DeclSpec::SCS_static:
+    break;
+  case DeclSpec::SCS_mutable:
+    if (isFunc) {
+      Diag(DS.getStorageClassSpecLoc(), diag::err_mutable_function);
 
-        // FIXME: It would be nicer if the keyword was ignored only for this
-        // declarator. Otherwise we could get follow-up errors.
-        D.getMutableDeclSpec().ClearStorageClassSpecs();
-      }
-      break;
-    default:
-      if (DS.getStorageClassSpecLoc().isValid())
-        Diag(DS.getStorageClassSpecLoc(),
-             diag::err_storageclass_invalid_for_member);
-      else
-        Diag(DS.getThreadSpecLoc(), diag::err_storageclass_invalid_for_member);
+      // FIXME: It would be nicer if the keyword was ignored only for this
+      // declarator. Otherwise we could get follow-up errors.
       D.getMutableDeclSpec().ClearStorageClassSpecs();
+    }
+    break;
+  default:
+    Diag(DS.getStorageClassSpecLoc(),
+         diag::err_storageclass_invalid_for_member);
+    D.getMutableDeclSpec().ClearStorageClassSpecs();
+    break;
   }
 
   bool isInstField = ((DS.getStorageClassSpec() == DeclSpec::SCS_unspecified ||
@@ -1788,8 +1775,16 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
       SS.clear();
     }
 
-    Member = HandleField(S, cast<CXXRecordDecl>(CurContext), Loc, D, BitWidth,
-                         InitStyle, AS);
+    AttributeList *MSPropertyAttr =
+      getMSPropertyAttr(D.getDeclSpec().getAttributes().getList());
+    if (MSPropertyAttr) {
+      Member = HandleMSProperty(S, cast<CXXRecordDecl>(CurContext), Loc, D,
+                                BitWidth, InitStyle, AS, MSPropertyAttr);
+      isInstField = false;
+    } else {
+      Member = HandleField(S, cast<CXXRecordDecl>(CurContext), Loc, D,
+                                BitWidth, InitStyle, AS);
+    }
     assert(Member && "HandleField never returns null");
   } else {
     assert(InitStyle == ICIS_NoInit || D.getDeclSpec().getStorageClassSpec() == DeclSpec::SCS_static);
@@ -7832,13 +7827,16 @@ private:
     //   constructor templates that results from omitting any ellipsis parameter
     //   specification and successively omitting parameters with a default
     //   argument from the end of the parameter-type-list
-    for (unsigned Params = std::max(minParamsToInherit(Ctor),
-                                    Ctor->getMinRequiredArguments()),
-                  MaxParams = Ctor->getNumParams();
-         Params <= MaxParams; ++Params)
-      declareCtor(UsingLoc, Ctor,
-                  SemaRef.Context.getFunctionType(
-                      Ctor->getResultType(), ArgTypes.slice(0, Params), EPI));
+    unsigned MinParams = minParamsToInherit(Ctor);
+    unsigned Params = Ctor->getNumParams();
+    if (Params >= MinParams) {
+      do
+        declareCtor(UsingLoc, Ctor,
+                    SemaRef.Context.getFunctionType(
+                        Ctor->getResultType(), ArgTypes.slice(0, Params), EPI));
+      while (Params > MinParams &&
+             Ctor->getParamDecl(--Params)->hasDefaultArg());
+    }
   }
 
   /// Find the using-declaration which specified that we should inherit the
@@ -12101,4 +12099,95 @@ bool Sema::CheckCUDATarget(CUDAFunctionTarget CallerTarget,
     return true;
 
   return false;
+}
+
+/// HandleMSProperty - Analyze a __delcspec(property) field of a C++ class.
+///
+MSPropertyDecl *Sema::HandleMSProperty(Scope *S, RecordDecl *Record,
+                                       SourceLocation DeclStart,
+                                       Declarator &D, Expr *BitWidth,
+                                       InClassInitStyle InitStyle,
+                                       AccessSpecifier AS,
+                                       AttributeList *MSPropertyAttr) {
+  IdentifierInfo *II = D.getIdentifier();
+  if (!II) {
+    Diag(DeclStart, diag::err_anonymous_property);
+    return NULL;
+  }
+  SourceLocation Loc = D.getIdentifierLoc();
+
+  TypeSourceInfo *TInfo = GetTypeForDeclarator(D, S);
+  QualType T = TInfo->getType();
+  if (getLangOpts().CPlusPlus) {
+    CheckExtraCXXDefaultArguments(D);
+
+    if (DiagnoseUnexpandedParameterPack(D.getIdentifierLoc(), TInfo,
+                                        UPPC_DataMemberType)) {
+      D.setInvalidType();
+      T = Context.IntTy;
+      TInfo = Context.getTrivialTypeSourceInfo(T, Loc);
+    }
+  }
+
+  DiagnoseFunctionSpecifiers(D.getDeclSpec());
+
+  if (DeclSpec::TSCS TSCS = D.getDeclSpec().getThreadStorageClassSpec())
+    Diag(D.getDeclSpec().getThreadStorageClassSpecLoc(),
+         diag::err_invalid_thread)
+      << DeclSpec::getSpecifierName(TSCS);
+
+  // Check to see if this name was declared as a member previously
+  NamedDecl *PrevDecl = 0;
+  LookupResult Previous(*this, II, Loc, LookupMemberName, ForRedeclaration);
+  LookupName(Previous, S);
+  switch (Previous.getResultKind()) {
+  case LookupResult::Found:
+  case LookupResult::FoundUnresolvedValue:
+    PrevDecl = Previous.getAsSingle<NamedDecl>();
+    break;
+
+  case LookupResult::FoundOverloaded:
+    PrevDecl = Previous.getRepresentativeDecl();
+    break;
+
+  case LookupResult::NotFound:
+  case LookupResult::NotFoundInCurrentInstantiation:
+  case LookupResult::Ambiguous:
+    break;
+  }
+
+  if (PrevDecl && PrevDecl->isTemplateParameter()) {
+    // Maybe we will complain about the shadowed template parameter.
+    DiagnoseTemplateParameterShadow(D.getIdentifierLoc(), PrevDecl);
+    // Just pretend that we didn't see the previous declaration.
+    PrevDecl = 0;
+  }
+
+  if (PrevDecl && !isDeclInScope(PrevDecl, Record, S))
+    PrevDecl = 0;
+
+  SourceLocation TSSL = D.getLocStart();
+  MSPropertyDecl *NewPD;
+  const AttributeList::PropertyData &Data = MSPropertyAttr->getPropertyData();
+  NewPD = new (Context) MSPropertyDecl(Record, Loc,
+                                       II, T, TInfo, TSSL,
+                                       Data.GetterId, Data.SetterId);
+  ProcessDeclAttributes(TUScope, NewPD, D);
+  NewPD->setAccess(AS);
+
+  if (NewPD->isInvalidDecl())
+    Record->setInvalidDecl();
+
+  if (D.getDeclSpec().isModulePrivateSpecified())
+    NewPD->setModulePrivate();
+
+  if (NewPD->isInvalidDecl() && PrevDecl) {
+    // Don't introduce NewFD into scope; there's already something
+    // with the same name in the same scope.
+  } else if (II) {
+    PushOnScopeChains(NewPD, S);
+  } else
+    Record->addDecl(NewPD);
+
+  return NewPD;
 }

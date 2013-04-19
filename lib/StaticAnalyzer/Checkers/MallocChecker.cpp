@@ -1606,9 +1606,8 @@ void MallocChecker::reportLeak(SymbolRef Sym, ExplodedNode *N,
   SmallString<200> buf;
   llvm::raw_svector_ostream os(buf);
   if (Region && Region->canPrintPretty()) {
-    os << "Potential leak of memory pointed to by '";
+    os << "Potential leak of memory pointed to by ";
     Region->printPretty(os);
-    os << '\'';
   } else {
     os << "Potential memory leak";
   }
@@ -2093,7 +2092,7 @@ MallocChecker::MallocBugVisitor::VisitNode(const ExplodedNode *N,
     } else if (isReleased(RS, RSPrev, S)) {
       Msg = "Memory is released";
       StackHint = new StackHintGeneratorForSymbol(Sym,
-                                                  "Returned released memory");
+                                             "Returning; memory was released");
     } else if (isRelinquished(RS, RSPrev, S)) {
       Msg = "Memory ownership is transfered";
       StackHint = new StackHintGeneratorForSymbol(Sym, "");
@@ -2153,6 +2152,14 @@ void MallocChecker::printState(raw_ostream &Out, ProgramStateRef State,
   }
 }
 
+void ento::registerNewDeleteLeaksChecker(CheckerManager &mgr) {
+  registerCStringCheckerBasic(mgr);
+  mgr.registerChecker<MallocChecker>()->Filter.CNewDeleteLeaksChecker = true;
+  // We currently treat NewDeleteLeaks checker as a subchecker of NewDelete 
+  // checker.
+  mgr.registerChecker<MallocChecker>()->Filter.CNewDeleteChecker = true;
+}
+
 #define REGISTER_CHECKER(name) \
 void ento::register##name(CheckerManager &mgr) {\
   registerCStringCheckerBasic(mgr); \
@@ -2162,5 +2169,4 @@ void ento::register##name(CheckerManager &mgr) {\
 REGISTER_CHECKER(MallocPessimistic)
 REGISTER_CHECKER(MallocOptimistic)
 REGISTER_CHECKER(NewDeleteChecker)
-REGISTER_CHECKER(NewDeleteLeaksChecker)
 REGISTER_CHECKER(MismatchedDeallocatorChecker)

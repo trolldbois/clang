@@ -29,6 +29,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/system_error.h"
 using namespace clang;
 
 //===----------------------------------------------------------------------===//
@@ -327,7 +328,6 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.DebugColumnInfo = Args.hasArg(OPT_dwarf_column_info);
   Opts.SplitDwarfFile = Args.getLastArgValue(OPT_split_dwarf_file);
 
-  Opts.ModulesAutolink = Args.hasArg(OPT_fmodules_autolink);
   Opts.DisableLLVMOpts = Args.hasArg(OPT_disable_llvm_optzns);
   Opts.DisableRedZone = Args.hasArg(OPT_disable_red_zone);
   Opts.ForbidGuardVariables = Args.hasArg(OPT_fforbid_guard_variables);
@@ -346,6 +346,7 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.UnrollLoops = Args.hasArg(OPT_funroll_loops) ||
                      (Opts.OptimizationLevel > 1 && !Opts.OptimizeSize);
 
+  Opts.Autolink = !Args.hasArg(OPT_fno_autolink);
   Opts.AsmVerbose = Args.hasArg(OPT_masm_verbose);
   Opts.ObjCAutoRefCountExceptions = Args.hasArg(OPT_fobjc_arc_exceptions);
   Opts.CUDAIsDevice = Args.hasArg(OPT_fcuda_is_device);
@@ -1695,6 +1696,22 @@ std::string CompilerInvocation::getModuleHash() const {
                       hsOpts.UseStandardSystemIncludes,
                       hsOpts.UseStandardCXXIncludes,
                       hsOpts.UseLibcxx);
+
+  // Darwin-specific hack: if we have a sysroot, use the contents of
+  //   $sysroot/System/Library/CoreServices/SystemVersion.plist
+  // as part of the module hash.
+  if (!hsOpts.Sysroot.empty()) {
+    llvm::OwningPtr<llvm::MemoryBuffer> buffer;
+    SmallString<128> systemVersionFile;
+    systemVersionFile += hsOpts.Sysroot;
+    llvm::sys::path::append(systemVersionFile, "System");
+    llvm::sys::path::append(systemVersionFile, "Library");
+    llvm::sys::path::append(systemVersionFile, "CoreServices");
+    llvm::sys::path::append(systemVersionFile, "SystemVersion.plist");
+    if (!llvm::MemoryBuffer::getFile(systemVersionFile, buffer)) {
+      code = hash_combine(code, buffer.get()->getBuffer());
+    }
+  }
 
   return llvm::APInt(64, code).toString(36, /*Signed=*/false);
 }

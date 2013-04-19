@@ -999,7 +999,7 @@ static bool CheckLValueConstantExpression(EvalInfo &Info, SourceLocation Loc,
   // Check if this is a thread-local variable.
   if (const ValueDecl *VD = Base.dyn_cast<const ValueDecl*>()) {
     if (const VarDecl *Var = dyn_cast<const VarDecl>(VD)) {
-      if (Var->isThreadSpecified())
+      if (Var->getTLSKind())
         return false;
     }
   }
@@ -6488,6 +6488,7 @@ static ICEDiag CheckICE(const Expr* E, ASTContext &Ctx) {
   case Expr::CXXDynamicCastExprClass:
   case Expr::CXXTypeidExprClass:
   case Expr::CXXUuidofExprClass:
+  case Expr::MSPropertyRefExprClass:
   case Expr::CXXNullPtrLiteralExprClass:
   case Expr::UserDefinedLiteralClass:
   case Expr::CXXThisExprClass:

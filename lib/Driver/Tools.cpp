@@ -815,7 +815,9 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
       CmdArgs.push_back("-mno-global-merge");
   }
 
-  if (Args.hasArg(options::OPT_mno_implicit_float))
+  if (!Args.hasFlag(options::OPT_mimplicit_float,
+                    options::OPT_mno_implicit_float,
+                    true))
     CmdArgs.push_back("-no-implicit-float");
 }
 
@@ -899,8 +901,6 @@ static StringRef getGnuCompatibleMipsABIName(StringRef ABI) {
 // Select the MIPS float ABI as determined by -msoft-float, -mhard-float,
 // and -mfloat-abi=.
 static StringRef getMipsFloatABI(const Driver &D, const ArgList &Args) {
-  // Select the float ABI as determined by -msoft-float, -mhard-float,
-  // and -mfloat-abi=.
   StringRef FloatABI;
   if (Arg *A = Args.getLastArg(options::OPT_msoft_float,
                                options::OPT_mhard_float,
@@ -911,7 +911,7 @@ static StringRef getMipsFloatABI(const Driver &D, const ArgList &Args) {
       FloatABI = "hard";
     else {
       FloatABI = A->getValue();
-      if (FloatABI != "soft" && FloatABI != "single" && FloatABI != "hard") {
+      if (FloatABI != "soft" && FloatABI != "hard") {
         D.Diag(diag::err_drv_invalid_mfloat_abi) << A->getAsString(Args);
         FloatABI = "hard";
       }
@@ -944,7 +944,7 @@ static void AddTargetFeature(const ArgList &Args,
 }
 
 void Clang::AddMIPSTargetArgs(const ArgList &Args,
-                             ArgStringList &CmdArgs) const {
+                              ArgStringList &CmdArgs) const {
   const Driver &D = getToolChain().getDriver();
   StringRef CPUName;
   StringRef ABIName;
@@ -977,12 +977,6 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
       CmdArgs.push_back("-mips16-hard-float");
     }
   }
-  else if (FloatABI == "single") {
-    // Restrict the use of hardware floating-point
-    // instructions to 32-bit operations.
-    CmdArgs.push_back("-target-feature");
-    CmdArgs.push_back("+single-float");
-  }
   else {
     // Floating point operations and argument passing are hard.
     assert(FloatABI == "hard" && "Invalid float abi!");
@@ -991,8 +985,14 @@ void Clang::AddMIPSTargetArgs(const ArgList &Args,
   }
 
   AddTargetFeature(Args, CmdArgs,
+                   options::OPT_msingle_float, options::OPT_mdouble_float,
+                   "single-float");
+  AddTargetFeature(Args, CmdArgs,
                    options::OPT_mips16, options::OPT_mno_mips16,
                    "mips16");
+  AddTargetFeature(Args, CmdArgs,
+                   options::OPT_mmicromips, options::OPT_mno_micromips,
+                   "micromips");
   AddTargetFeature(Args, CmdArgs,
                    options::OPT_mdsp, options::OPT_mno_dsp,
                    "dsp");
@@ -1255,6 +1255,7 @@ void Clang::AddX86TargetArgs(const ArgList &Args,
                           Args.hasArg(options::OPT_fapple_kext));
   if (Arg *A = Args.getLastArg(options::OPT_msoft_float,
                                options::OPT_mno_soft_float,
+                               options::OPT_mimplicit_float,
                                options::OPT_mno_implicit_float)) {
     const Option &O = A->getOption();
     NoImplicitFloat = (O.matches(options::OPT_mno_implicit_float) ||
@@ -1450,6 +1451,18 @@ static void addExceptionArgs(const ArgList &Args, types::ID InputType,
 
   if (ShouldUseExceptionTables)
     CmdArgs.push_back("-fexceptions");
+}
+
+static bool ShouldDisableAutolink(const ArgList &Args,
+                             const ToolChain &TC) {
+  bool Default = true;
+  if (TC.getTriple().isOSDarwin()) {
+    // The native darwin assembler doesn't support the linker_option directives,
+    // so we disable them if we think the .s file will be passed to it.
+    Default = TC.useIntegratedAs();
+  }
+  return !Args.hasFlag(options::OPT_fautolink, options::OPT_fno_autolink,
+                       Default);
 }
 
 static bool ShouldDisableCFI(const ArgList &Args,
@@ -2593,6 +2606,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (ShouldDisableDwarfDirectory(Args, getToolChain()))
     CmdArgs.push_back("-fno-dwarf-directory-asm");
 
+  if (ShouldDisableAutolink(Args, getToolChain()))
+    CmdArgs.push_back("-fno-autolink");
+
   // Add in -fdebug-compilation-dir if necessary.
   addDebugCompDirArg(Args, CmdArgs);
 
@@ -2887,16 +2903,6 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   Args.AddAllArgs(CmdArgs, options::OPT_fmodules_ignore_macro);
   Args.AddLastArg(CmdArgs, options::OPT_fmodules_prune_interval);
   Args.AddLastArg(CmdArgs, options::OPT_fmodules_prune_after);
-
-  // -fmodules-autolink (on by default when modules is enabled) automatically
-  // links against libraries for imported modules.  This requires the
-  // integrated assembler.
-  if (HaveModules && getToolChain().useIntegratedAs() &&
-      Args.hasFlag(options::OPT_fmodules_autolink,
-                   options::OPT_fno_modules_autolink,
-                   true)) {
-    CmdArgs.push_back("-fmodules-autolink");
-  }
 
   // -faccess-control is default.
   if (Args.hasFlag(options::OPT_fno_access_control,
@@ -3194,9 +3200,42 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   // Color diagnostics are the default, unless the terminal doesn't support
   // them.
-  if (Args.hasFlag(options::OPT_fcolor_diagnostics,
-                   options::OPT_fno_color_diagnostics,
-                   llvm::sys::Process::StandardErrHasColors()))
+  // Support both clang's -f[no-]color-diagnostics and gcc's
+  // -f[no-]diagnostics-colors[=never|always|auto].
+  enum { Colors_On, Colors_Off, Colors_Auto } ShowColors = Colors_Auto;
+  for (ArgList::const_iterator it = Args.begin(), ie = Args.end();
+       it != ie; ++it) {
+    const Option &O = (*it)->getOption();
+    if (!O.matches(options::OPT_fcolor_diagnostics) &&
+        !O.matches(options::OPT_fdiagnostics_color) &&
+        !O.matches(options::OPT_fno_color_diagnostics) &&
+        !O.matches(options::OPT_fno_diagnostics_color) &&
+        !O.matches(options::OPT_fdiagnostics_color_EQ))
+      continue;
+
+    (*it)->claim();
+    if (O.matches(options::OPT_fcolor_diagnostics) ||
+        O.matches(options::OPT_fdiagnostics_color)) {
+      ShowColors = Colors_On;
+    } else if (O.matches(options::OPT_fno_color_diagnostics) ||
+               O.matches(options::OPT_fno_diagnostics_color)) {
+      ShowColors = Colors_Off;
+    } else {
+      assert(O.matches(options::OPT_fdiagnostics_color_EQ));
+      StringRef value((*it)->getValue());
+      if (value == "always")
+        ShowColors = Colors_On;
+      else if (value == "never")
+        ShowColors = Colors_Off;
+      else if (value == "auto")
+        ShowColors = Colors_Auto;
+      else
+        getToolChain().getDriver().Diag(diag::err_drv_clang_unsupported)
+          << ("-fdiagnostics-color=" + value).str();
+    }
+  }
+  if (ShowColors == Colors_On ||
+      (ShowColors == Colors_Auto && llvm::sys::Process::StandardErrHasColors()))
     CmdArgs.push_back("-fcolor-diagnostics");
 
   if (!Args.hasFlag(options::OPT_fshow_source_location,
@@ -3229,7 +3268,14 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (Args.hasFlag(options::OPT_fslp_vectorize,
                    options::OPT_fno_slp_vectorize, false)) {
     CmdArgs.push_back("-backend-option");
-    CmdArgs.push_back("-vectorize");
+    CmdArgs.push_back("-vectorize-slp");
+  }
+
+  // -fno-slp-vectorize-aggressive is default.
+  if (Args.hasFlag(options::OPT_fslp_vectorize_aggressive,
+                   options::OPT_fno_slp_vectorize_aggressive, false)) {
+    CmdArgs.push_back("-backend-option");
+    CmdArgs.push_back("-vectorize-slp-aggressive");
   }
 
   if (Arg *A = Args.getLastArg(options::OPT_fshow_overloads_EQ))
@@ -3873,7 +3919,6 @@ void hexagon::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(
       Args.MakeArgString(std::string("-G") + SmallDataThreshold));
 
-  Args.AddAllArgs(CmdArgs, options::OPT_g_Group);
   Args.AddAllArgValues(CmdArgs, options::OPT_Wa_COMMA,
                        options::OPT_Xassembler);
 
@@ -6170,21 +6215,29 @@ void dragonfly::Link::ConstructJob(Compilation &C, const JobAction &JA,
                                    const InputInfoList &Inputs,
                                    const ArgList &Args,
                                    const char *LinkingOutput) const {
+  bool UseGCC47 = false;
   const Driver &D = getToolChain().getDriver();
   ArgStringList CmdArgs;
+
+  if (llvm::sys::fs::exists("/usr/lib/gcc47", UseGCC47))
+    UseGCC47 = false;
 
   if (!D.SysRoot.empty())
     CmdArgs.push_back(Args.MakeArgString("--sysroot=" + D.SysRoot));
 
+  CmdArgs.push_back("--eh-frame-hdr");
   if (Args.hasArg(options::OPT_static)) {
     CmdArgs.push_back("-Bstatic");
   } else {
+    if (Args.hasArg(options::OPT_rdynamic))
+      CmdArgs.push_back("-export-dynamic");
     if (Args.hasArg(options::OPT_shared))
       CmdArgs.push_back("-Bshareable");
     else {
       CmdArgs.push_back("-dynamic-linker");
       CmdArgs.push_back("/usr/libexec/ld-elf.so.2");
     }
+    CmdArgs.push_back("--hash-style=both");
   }
 
   // When building 32-bit code on DragonFly/pc64, we have to explicitly
@@ -6204,18 +6257,26 @@ void dragonfly::Link::ConstructJob(Compilation &C, const JobAction &JA,
   if (!Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nostartfiles)) {
     if (!Args.hasArg(options::OPT_shared)) {
-      CmdArgs.push_back(
-            Args.MakeArgString(getToolChain().GetFilePath("crt1.o")));
-      CmdArgs.push_back(
-            Args.MakeArgString(getToolChain().GetFilePath("crti.o")));
-      CmdArgs.push_back(
-            Args.MakeArgString(getToolChain().GetFilePath("crtbegin.o")));
-    } else {
-      CmdArgs.push_back(
-            Args.MakeArgString(getToolChain().GetFilePath("crti.o")));
-      CmdArgs.push_back(
-            Args.MakeArgString(getToolChain().GetFilePath("crtbeginS.o")));
+      if (Args.hasArg(options::OPT_pg))
+        CmdArgs.push_back(Args.MakeArgString(
+                                getToolChain().GetFilePath("gcrt1.o")));
+      else {
+        if (Args.hasArg(options::OPT_pie))
+          CmdArgs.push_back(Args.MakeArgString(
+                                  getToolChain().GetFilePath("Scrt1.o")));
+        else
+          CmdArgs.push_back(Args.MakeArgString(
+                                  getToolChain().GetFilePath("crt1.o")));
+      }
     }
+    CmdArgs.push_back(Args.MakeArgString(
+                            getToolChain().GetFilePath("crti.o")));
+    if (Args.hasArg(options::OPT_shared) || Args.hasArg(options::OPT_pie))
+      CmdArgs.push_back(Args.MakeArgString(
+                              getToolChain().GetFilePath("crtbeginS.o")));
+    else
+      CmdArgs.push_back(Args.MakeArgString(
+                              getToolChain().GetFilePath("crtbegin.o")));
   }
 
   Args.AddAllArgs(CmdArgs, options::OPT_L);
@@ -6228,33 +6289,25 @@ void dragonfly::Link::ConstructJob(Compilation &C, const JobAction &JA,
       !Args.hasArg(options::OPT_nodefaultlibs)) {
     // FIXME: GCC passes on -lgcc, -lgcc_pic and a whole lot of
     //         rpaths
-    CmdArgs.push_back("-L/usr/lib/gcc41");
+    if (UseGCC47)
+      CmdArgs.push_back("-L/usr/lib/gcc47");
+    else
+      CmdArgs.push_back("-L/usr/lib/gcc44");
 
     if (!Args.hasArg(options::OPT_static)) {
-      CmdArgs.push_back("-rpath");
-      CmdArgs.push_back("/usr/lib/gcc41");
-
-      CmdArgs.push_back("-rpath-link");
-      CmdArgs.push_back("/usr/lib/gcc41");
-
-      CmdArgs.push_back("-rpath");
-      CmdArgs.push_back("/usr/lib");
-
-      CmdArgs.push_back("-rpath-link");
-      CmdArgs.push_back("/usr/lib");
+      if (UseGCC47) {
+        CmdArgs.push_back("-rpath");
+        CmdArgs.push_back("/usr/lib/gcc47");
+      } else {
+        CmdArgs.push_back("-rpath");
+        CmdArgs.push_back("/usr/lib/gcc44");
+      }
     }
 
     if (D.CCCIsCXX) {
       getToolChain().AddCXXStdlibLibArgs(Args, CmdArgs);
       CmdArgs.push_back("-lm");
     }
-
-    if (Args.hasArg(options::OPT_shared)) {
-      CmdArgs.push_back("-lgcc_pic");
-    } else {
-      CmdArgs.push_back("-lgcc");
-    }
-
 
     if (Args.hasArg(options::OPT_pthread))
       CmdArgs.push_back("-lpthread");
@@ -6263,23 +6316,42 @@ void dragonfly::Link::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("-lc");
     }
 
-    if (Args.hasArg(options::OPT_shared)) {
-      CmdArgs.push_back("-lgcc_pic");
+    if (UseGCC47) {
+      if (Args.hasArg(options::OPT_static) ||
+          Args.hasArg(options::OPT_static_libgcc)) {
+        CmdArgs.push_back("-lgcc");
+        CmdArgs.push_back("-lgcc_eh");
+      } else {
+        if (Args.hasArg(options::OPT_shared_libgcc)) {
+          CmdArgs.push_back("-lgcc_pic");
+          if (!Args.hasArg(options::OPT_shared))
+            CmdArgs.push_back("-lgcc");
+        } else {
+          CmdArgs.push_back("-lgcc");
+          CmdArgs.push_back("--as-needed");
+          CmdArgs.push_back("-lgcc_pic");
+          CmdArgs.push_back("--no-as-needed");
+        }
+      }
     } else {
-      CmdArgs.push_back("-lgcc");
+      if (Args.hasArg(options::OPT_shared)) {
+        CmdArgs.push_back("-lgcc_pic");
+      } else {
+        CmdArgs.push_back("-lgcc");
+      }
     }
   }
 
   if (!Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nostartfiles)) {
-    if (!Args.hasArg(options::OPT_shared))
-      CmdArgs.push_back(Args.MakeArgString(
-                              getToolChain().GetFilePath("crtend.o")));
-    else
+    if (Args.hasArg(options::OPT_shared) || Args.hasArg(options::OPT_pie))
       CmdArgs.push_back(Args.MakeArgString(
                               getToolChain().GetFilePath("crtendS.o")));
+    else
+      CmdArgs.push_back(Args.MakeArgString(
+                              getToolChain().GetFilePath("crtend.o")));
     CmdArgs.push_back(Args.MakeArgString(
-                              getToolChain().GetFilePath("crtn.o")));
+                            getToolChain().GetFilePath("crtn.o")));
   }
 
   addProfileRT(getToolChain(), Args, CmdArgs, getToolChain().getTriple());
