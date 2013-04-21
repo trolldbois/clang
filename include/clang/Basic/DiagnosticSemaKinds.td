@@ -78,6 +78,9 @@ def ext_vla : Extension<"variable length arrays are a C99 feature">,
   InGroup<VLAExtension>;
 def warn_vla_used : Warning<"variable length array used">,
   InGroup<VLA>, DefaultIgnore;
+def warn_cxx11_compat_array_of_runtime_bound : Warning<
+  "arrays of runtime bound are incompatible with C++ standards before C++1y">,
+  InGroup<CXXPre1yCompatPedantic>, DefaultIgnore;
 def err_vla_non_pod : Error<"variable length array of non-POD element type %0">;
 def err_vla_in_sfinae : Error<
   "variable length array cannot be formed during template argument deduction">;
@@ -1547,6 +1550,11 @@ def note_for_range_begin_end : Note<
 def warn_cxx98_compat_constexpr : Warning<
   "'constexpr' specifier is incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
+// FIXME: Maybe this should also go in -Wc++1y-compat?
+def warn_cxx1y_compat_constexpr_not_const : Warning<
+  "'constexpr' non-static member function will not be implicitly 'const' "
+  "in C++1y; add 'const' to avoid a change in behavior">,
+  InGroup<DiagGroup<"constexpr-not-const">>;
 def err_invalid_constexpr : Error<
   "%select{function parameter|typedef|non-static data member}0 "
   "cannot be constexpr">;

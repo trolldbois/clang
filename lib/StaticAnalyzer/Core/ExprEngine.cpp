@@ -604,6 +604,7 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
   switch (S->getStmtClass()) {
     // C++ and ARC stuff we don't support yet.
     case Expr::ObjCIndirectCopyRestoreExprClass:
+    case Stmt::CXXDefaultInitExprClass:
     case Stmt::CXXDependentScopeMemberExprClass:
     case Stmt::CXXPseudoDestructorExprClass:
     case Stmt::CXXTryStmtClass:
@@ -1811,7 +1812,8 @@ ExprEngine::notifyCheckersOfPointerEscape(ProgramStateRef State,
     return getCheckerManager().runCheckersForPointerEscape(State,
                                                            *Invalidated,
                                                            0,
-                                                           PSK_EscapeOther);
+                                                           PSK_EscapeOther,
+                                                           IsConst);
 
   // Note: Due to current limitations of RegionStore, we only process the top
   // level const pointers correctly. The lower level const pointers are
