@@ -4116,6 +4116,12 @@ CXSourceLocation clang_getCursorLocation(CXCursor C) {
     return cxloc::translateSourceLocation(getCursorContext(C), L);
   }
 
+  if (clang_isAttribute(C.kind)) {
+    SourceLocation L
+      = cxcursor::getCursorAttr(C)->getLocation();
+    return cxloc::translateSourceLocation(getCursorContext(C), L);
+  }
+
   if (!clang_isDeclaration(C.kind))
     return clang_getNullLocation();
 
