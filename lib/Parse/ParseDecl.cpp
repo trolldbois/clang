@@ -13,6 +13,7 @@
 
 #include "clang/Parse/Parser.h"
 #include "RAIIObjectsForParser.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/Basic/AddressSpaces.h"
 #include "clang/Basic/CharInfo.h"
 #include "clang/Basic/OpenCL.h"
@@ -178,6 +179,12 @@ void Parser::ParseGNUAttributes(ParsedAttributes &attrs,
   }
 }
 
+/// \brief Determine whether the given attribute has all expression arguments.
+static bool attributeHasExprArgs(const IdentifierInfo &II) {
+  return llvm::StringSwitch<bool>(II.getName())
+#include "clang/Parse/AttrExprArgs.inc"
+           .Default(false);
+}
 
 /// Parse the arguments to a parameterized GNU attribute or
 /// a C++11 attribute in "gnu" namespace.
@@ -247,6 +254,10 @@ void Parser::ParseGNUAttributeArgs(IdentifierInfo *AttrName,
       TypeParsed = true;
       break;
     }
+    // If the attribute has all expression arguments, and not a "parameter",
+    // break out to handle it below.
+    if (attributeHasExprArgs(*AttrName))
+      break;
     ParmName = Tok.getIdentifierInfo();
     ParmLoc = ConsumeToken();
     break;
@@ -364,6 +375,7 @@ bool Parser::IsSimpleMicrosoftDeclSpec(IdentifierInfo *Ident) {
     .Case("novtable", true)
     .Case("selectany", true)
     .Case("thread", true)
+    .Case("safebuffers", true )
     .Default(false);
 }
 
@@ -590,7 +602,8 @@ void Parser::ParseMicrosoftTypeAttributes(ParsedAttributes &attrs) {
   while (Tok.is(tok::kw___fastcall) || Tok.is(tok::kw___stdcall) ||
          Tok.is(tok::kw___thiscall) || Tok.is(tok::kw___cdecl)   ||
          Tok.is(tok::kw___ptr64) || Tok.is(tok::kw___w64) ||
-         Tok.is(tok::kw___ptr32) || Tok.is(tok::kw___unaligned)) {
+         Tok.is(tok::kw___ptr32) || Tok.is(tok::kw___unaligned) ||
+         Tok.is(tok::kw___sptr) || Tok.is(tok::kw___uptr)) {
     IdentifierInfo *AttrName = Tok.getIdentifierInfo();
     SourceLocation AttrNameLoc = ConsumeToken();
     attrs.addNew(AttrName, AttrNameLoc, 0, AttrNameLoc, 0,
@@ -1051,9 +1064,8 @@ void Parser::ParseLexedAttribute(LateParsedAttribute &LA,
     RecordDecl *RD = dyn_cast_or_null<RecordDecl>(D->getDeclContext());
 
     // Allow 'this' within late-parsed attributes.
-    Sema::CXXThisScopeRAII ThisScope(Actions, RD,
-                                     /*TypeQuals=*/0,
-                                     ND && RD && ND->isCXXInstanceMember());
+    Sema::CXXThisScopeRAII ThisScope(Actions, RD, /*TypeQuals=*/0,
+                                     ND && ND->isCXXInstanceMember());
 
     if (LA.Decls.size() == 1) {
       // If the Decl is templatized, add template parameters to scope.
@@ -1655,7 +1667,7 @@ Parser::DeclGroupPtrTy Parser::ParseDeclGroup(ParsingDeclSpec &DS,
       Actions.ActOnCXXForRangeDecl(ThisDecl);
     Actions.FinalizeDeclaration(ThisDecl);
     D.complete(ThisDecl);
-    return Actions.FinalizeDeclaratorGroup(getCurScope(), DS, &ThisDecl, 1);
+    return Actions.FinalizeDeclaratorGroup(getCurScope(), DS, ThisDecl);
   }
 
   SmallVector<Decl *, 8> DeclsInGroup;
@@ -1722,9 +1734,7 @@ Parser::DeclGroupPtrTy Parser::ParseDeclGroup(ParsingDeclSpec &DS,
     }
   }
 
-  return Actions.FinalizeDeclaratorGroup(getCurScope(), DS,
-                                         DeclsInGroup.data(),
-                                         DeclsInGroup.size());
+  return Actions.FinalizeDeclaratorGroup(getCurScope(), DS, DeclsInGroup);
 }
 
 /// Parse an optional simple-asm-expr and attributes, and attach them to a
@@ -1787,35 +1797,69 @@ Decl *Parser::ParseDeclarationAfterDeclaratorAndAttributes(Declarator &D,
     break;
 
   case ParsedTemplateInfo::Template:
-  case ParsedTemplateInfo::ExplicitSpecialization:
+  case ParsedTemplateInfo::ExplicitSpecialization: {
     ThisDecl = Actions.ActOnTemplateDeclarator(getCurScope(),
                                                *TemplateInfo.TemplateParams,
                                                D);
-    break;
-
-  case ParsedTemplateInfo::ExplicitInstantiation: {
-    DeclResult ThisRes
-      = Actions.ActOnExplicitInstantiation(getCurScope(),
-                                           TemplateInfo.ExternLoc,
-                                           TemplateInfo.TemplateLoc,
-                                           D);
-    if (ThisRes.isInvalid()) {
+    if (Tok.is(tok::semi) &&
+	Actions.HandleVariableRedeclaration(ThisDecl, D.getCXXScopeSpec())) {
       SkipUntil(tok::semi, true, true);
       return 0;
     }
+    if (VarTemplateDecl *VT = dyn_cast_or_null<VarTemplateDecl>(ThisDecl))
+      // Re-direct this decl to refer to the templated decl so that we can
+      // initialize it.
+      ThisDecl = VT->getTemplatedDecl();
+    break;
+  }
+  case ParsedTemplateInfo::ExplicitInstantiation: {
+    if (Tok.is(tok::semi)) {
+      DeclResult ThisRes = Actions.ActOnExplicitInstantiation(
+          getCurScope(), TemplateInfo.ExternLoc, TemplateInfo.TemplateLoc, D);
+      if (ThisRes.isInvalid()) {
+        SkipUntil(tok::semi, true, true);
+        return 0;
+      }
+      ThisDecl = ThisRes.get();
+    } else {
+      // FIXME: This check should be for a variable template instantiation only.
 
-    ThisDecl = ThisRes.get();
+      // Check that this is a valid instantiation
+      if (D.getName().getKind() != UnqualifiedId::IK_TemplateId) {
+        // If the declarator-id is not a template-id, issue a diagnostic and
+        // recover by ignoring the 'template' keyword.
+        Diag(Tok, diag::err_template_defn_explicit_instantiation)
+            << 2 << FixItHint::CreateRemoval(TemplateInfo.TemplateLoc);
+        ThisDecl = Actions.ActOnDeclarator(getCurScope(), D);
+      } else {
+        SourceLocation LAngleLoc =
+            PP.getLocForEndOfToken(TemplateInfo.TemplateLoc);
+        Diag(D.getIdentifierLoc(),
+             diag::err_explicit_instantiation_with_definition)
+            << SourceRange(TemplateInfo.TemplateLoc)
+            << FixItHint::CreateInsertion(LAngleLoc, "<>");
+
+        // Recover as if it were an explicit specialization.
+        TemplateParameterLists FakedParamLists;
+        FakedParamLists.push_back(Actions.ActOnTemplateParameterList(
+            0, SourceLocation(), TemplateInfo.TemplateLoc, LAngleLoc, 0, 0,
+            LAngleLoc));
+
+        ThisDecl =
+            Actions.ActOnTemplateDeclarator(getCurScope(), FakedParamLists, D);
+      }
+    }
     break;
     }
   }
 
-  bool TypeContainsAuto =
-    D.getDeclSpec().getTypeSpecType() == DeclSpec::TST_auto;
+  bool TypeContainsAuto = D.getDeclSpec().containsPlaceholderType();
 
   // Parse declarator '=' initializer.
   // If a '==' or '+=' is found, suggest a fixit to '='.
   if (isTokenEqualOrEqualTypo()) {
     ConsumeToken();
+
     if (Tok.is(tok::kw_delete)) {
       if (D.isFunctionDeclarator())
         Diag(ConsumeToken(), diag::err_default_delete_in_multiple_declaration)
@@ -2039,10 +2083,9 @@ bool Parser::ParseImplicitInt(DeclSpec &DS, CXXScopeSpec *SS,
   // error, do lookahead to try to do better recovery. This never applies
   // within a type specifier. Outside of C++, we allow this even if the
   // language doesn't "officially" support implicit int -- we support
-  // implicit int as an extension in C99 and C11. Allegedly, MS also
-  // supports implicit int in C++ mode.
+  // implicit int as an extension in C99 and C11.
   if (DSC != DSC_type_specifier && DSC != DSC_trailing &&
-      (!getLangOpts().CPlusPlus || getLangOpts().MicrosoftExt) &&
+      !getLangOpts().CPlusPlus &&
       isValidAfterIdentifierInDeclarator(NextToken())) {
     // If this token is valid for implicit int, e.g. "static x = 4", then
     // we just avoid eating the identifier, so it will be parsed as the
@@ -2515,7 +2558,7 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       // erroneous: We already checked about that it has no type specifier, and
       // C++ doesn't have implicit int.  Diagnose it as a typo w.r.t. to the
       // typename.
-      if (TypeRep == 0) {
+      if (!TypeRep) {
         ConsumeToken();   // Eat the scope spec so the identifier is current.
         ParsedAttributesWithRange Attrs(AttrFactory);
         if (ParseImplicitInt(DS, &SS, TemplateInfo, AS, DSContext, Attrs)) {
@@ -2702,6 +2745,8 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
       break;
     }
 
+    case tok::kw___sptr:
+    case tok::kw___uptr:
     case tok::kw___ptr64:
     case tok::kw___ptr32:
     case tok::kw___w64:
@@ -3205,12 +3250,6 @@ void Parser::ParseStructUnionBody(SourceLocation RecordLoc,
   ParseScope StructScope(this, Scope::ClassScope|Scope::DeclScope);
   Actions.ActOnTagStartDefinition(getCurScope(), TagDecl);
 
-  // Empty structs are an extension in C (C99 6.7.2.1p7).
-  if (Tok.is(tok::r_brace)) {
-    Diag(Tok, diag::ext_empty_struct_union) << (TagType == TST_union);
-    Diag(Tok, diag::warn_empty_struct_union_compat) << (TagType == TST_union);
-  }
-
   SmallVector<Decl *, 32> FieldDecls;
 
   // While we still have something to read, read the declarations in the struct.
@@ -3367,9 +3406,9 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
   bool IsScopedUsingClassTag = false;
 
   // In C++11, recognize 'enum class' and 'enum struct'.
-  if (getLangOpts().CPlusPlus11 &&
-      (Tok.is(tok::kw_class) || Tok.is(tok::kw_struct))) {
-    Diag(Tok, diag::warn_cxx98_compat_scoped_enum);
+  if (Tok.is(tok::kw_class) || Tok.is(tok::kw_struct)) {
+    Diag(Tok, getLangOpts().CPlusPlus11 ? diag::warn_cxx98_compat_scoped_enum
+                                        : diag::ext_scoped_enum);
     IsScopedUsingClassTag = Tok.is(tok::kw_class);
     ScopedEnumKWLoc = ConsumeToken();
 
@@ -3754,8 +3793,8 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
   MaybeParseGNUAttributes(attrs);
 
   Actions.ActOnEnumBody(StartLoc, T.getOpenLocation(), T.getCloseLocation(),
-                        EnumDecl, EnumConstantDecls.data(),
-                        EnumConstantDecls.size(), getCurScope(),
+                        EnumDecl, EnumConstantDecls,
+                        getCurScope(),
                         attrs.getList());
 
   EnumScope.Exit();
@@ -4136,6 +4175,8 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
   case tok::kw___fastcall:
   case tok::kw___thiscall:
   case tok::kw___w64:
+  case tok::kw___sptr:
+  case tok::kw___uptr:
   case tok::kw___ptr64:
   case tok::kw___ptr32:
   case tok::kw___forceinline:
@@ -4312,6 +4353,8 @@ void Parser::ParseTypeQualifierListOpt(DeclSpec &DS,
       ParseOpenCLQualifiers(DS);
       break;
 
+    case tok::kw___sptr:
+    case tok::kw___uptr:
     case tok::kw___w64:
     case tok::kw___ptr64:
     case tok::kw___ptr32:
@@ -4686,6 +4729,12 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
            "There's a C++-specific check for tok::identifier above");
     assert(Tok.getIdentifierInfo() && "Not an identifier?");
     D.SetIdentifier(Tok.getIdentifierInfo(), Tok.getLocation());
+    ConsumeToken();
+    goto PastIdentifier;
+  } else if (Tok.is(tok::identifier) && D.diagnoseIdentifier()) {
+    Diag(Tok.getLocation(), diag::err_unexpected_unqualified_id)
+      << FixItHint::CreateRemoval(Tok.getLocation());
+    D.SetIdentifier(0, Tok.getLocation());
     ConsumeToken();
     goto PastIdentifier;
   }
@@ -5108,7 +5157,7 @@ bool Parser::isFunctionDeclaratorIdentifierList() {
 ///
 void Parser::ParseFunctionDeclaratorIdentifierList(
        Declarator &D,
-       SmallVector<DeclaratorChunk::ParamInfo, 16> &ParamInfo) {
+       SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo) {
   // If there was no identifier specified for the declarator, either we are in
   // an abstract-declarator, or we are in a parameter declarator which was found
   // to be abstract.  In abstract-declarators, identifier lists are not valid:
@@ -5189,7 +5238,7 @@ void Parser::ParseFunctionDeclaratorIdentifierList(
 void Parser::ParseParameterDeclarationClause(
        Declarator &D,
        ParsedAttributes &FirstArgAttrs,
-       SmallVector<DeclaratorChunk::ParamInfo, 16> &ParamInfo,
+       SmallVectorImpl<DeclaratorChunk::ParamInfo> &ParamInfo,
        SourceLocation &EllipsisLoc) {
 
   while (1) {
@@ -5577,6 +5626,10 @@ bool Parser::TryAltiVecVectorTokenOutOfLine() {
       Tok.setKind(tok::kw___vector);
       return true;
     }
+    if (Next.getIdentifierInfo() == Ident_bool) {
+      Tok.setKind(tok::kw___vector);
+      return true;
+    }
     return false;
   }
 }
@@ -5605,6 +5658,10 @@ bool Parser::TryAltiVecTokenOutOfLine(DeclSpec &DS, SourceLocation Loc,
         isInvalid = DS.SetTypeAltiVecVector(true, Loc, PrevSpec, DiagID);
         return true;
       }
+      if (Next.getIdentifierInfo() == Ident_bool) {
+        isInvalid = DS.SetTypeAltiVecVector(true, Loc, PrevSpec, DiagID);
+        return true;
+      }
       break;
     default:
       break;
@@ -5612,6 +5669,10 @@ bool Parser::TryAltiVecTokenOutOfLine(DeclSpec &DS, SourceLocation Loc,
   } else if ((Tok.getIdentifierInfo() == Ident_pixel) &&
              DS.isTypeAltiVecVector()) {
     isInvalid = DS.SetTypeAltiVecPixel(true, Loc, PrevSpec, DiagID);
+    return true;
+  } else if ((Tok.getIdentifierInfo() == Ident_bool) &&
+             DS.isTypeAltiVecVector()) {
+    isInvalid = DS.SetTypeAltiVecBool(true, Loc, PrevSpec, DiagID);
     return true;
   }
   return false;

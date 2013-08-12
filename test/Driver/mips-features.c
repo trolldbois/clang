@@ -1,5 +1,3 @@
-// REQUIRES: mips-registered-target
-//
 // Check handling MIPS specific features options.
 //
 // -mips16
@@ -61,6 +59,30 @@
 // RUN:     -mxgot -mno-xgot 2>&1 \
 // RUN:   | FileCheck --check-prefix=CHECK-NOXGOT %s
 // CHECK-NOXGOT-NOT: "-mllvm" "-mxgot"
+//
+// -mldc1-sdc1
+// RUN: %clang -target mips-linux-gnu -### -c %s \
+// RUN:     -mno-ldc1-sdc1 -mldc1-sdc1 2>&1 \
+// RUN:   | FileCheck --check-prefix=CHECK-LDC1SDC1 %s
+// CHECK-LDC1SDC1-NOT: "-mllvm" "-mno-ldc1-sdc1"
+//
+// -mno-ldc1-sdc1
+// RUN: %clang -target mips-linux-gnu -### -c %s \
+// RUN:     -mldc1-sdc1 -mno-ldc1-sdc1 2>&1 \
+// RUN:   | FileCheck --check-prefix=CHECK-NOLDC1SDC1 %s
+// CHECK-NOLDC1SDC1: "-mllvm" "-mno-ldc1-sdc1"
+//
+// -mcheck-zero-division
+// RUN: %clang -target mips-linux-gnu -### -c %s \
+// RUN:     -mno-check-zero-division -mcheck-zero-division 2>&1 \
+// RUN:   | FileCheck --check-prefix=CHECK-ZERODIV %s
+// CHECK-ZERODIV-NOT: "-mllvm" "-mno-check-zero-division"
+//
+// -mno-check-zero-division
+// RUN: %clang -target mips-linux-gnu -### -c %s \
+// RUN:     -mcheck-zero-division -mno-check-zero-division 2>&1 \
+// RUN:   | FileCheck --check-prefix=CHECK-NOZERODIV %s
+// CHECK-NOZERODIV: "-mllvm" "-mno-check-zero-division"
 //
 // -G
 // RUN: %clang -target mips-linux-gnu -### -c %s \

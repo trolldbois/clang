@@ -60,6 +60,9 @@ enum IMAKind {
   /// The reference may be to an unresolved using declaration.
   IMA_Unresolved,
 
+  /// The reference is a contextually-permitted abstract member reference.
+  IMA_Abstract,
+
   /// The reference may be to an unresolved using declaration and the
   /// context is not an instance method.
   IMA_Unresolved_StaticContext,
@@ -120,19 +123,32 @@ static IMAKind ClassifyImplicitMemberAccess(Sema &SemaRef,
   // member reference.
   if (Classes.empty())
     return IMA_Static;
+  
+  // C++11 [expr.prim.general]p12:
+  //   An id-expression that denotes a non-static data member or non-static
+  //   member function of a class can only be used:
+  //   (...)
+  //   - if that id-expression denotes a non-static data member and it
+  //     appears in an unevaluated operand.
+  //
+  // This rule is specific to C++11.  However, we also permit this form
+  // in unevaluated inline assembly operands, like the operand to a SIZE.
+  IMAKind AbstractInstanceResult = IMA_Static; // happens to be 'false'
+  assert(!AbstractInstanceResult);
+  switch (SemaRef.ExprEvalContexts.back().Context) {
+  case Sema::Unevaluated:
+    if (isField && SemaRef.getLangOpts().CPlusPlus11)
+      AbstractInstanceResult = IMA_Field_Uneval_Context;
+    break;
 
-  bool IsCXX11UnevaluatedField = false;
-  if (SemaRef.getLangOpts().CPlusPlus11 && isField) {
-    // C++11 [expr.prim.general]p12:
-    //   An id-expression that denotes a non-static data member or non-static
-    //   member function of a class can only be used:
-    //   (...)
-    //   - if that id-expression denotes a non-static data member and it
-    //     appears in an unevaluated operand.
-    const Sema::ExpressionEvaluationContextRecord& record
-      = SemaRef.ExprEvalContexts.back();
-    if (record.Context == Sema::Unevaluated)
-      IsCXX11UnevaluatedField = true;
+  case Sema::UnevaluatedAbstract:
+    AbstractInstanceResult = IMA_Abstract;
+    break;
+
+  case Sema::ConstantEvaluated:
+  case Sema::PotentiallyEvaluated:
+  case Sema::PotentiallyEvaluatedIfUsed:
+    break;
   }
 
   // If the current context is not an instance method, it can't be
@@ -141,8 +157,8 @@ static IMAKind ClassifyImplicitMemberAccess(Sema &SemaRef,
     if (hasNonInstance)
       return IMA_Mixed_StaticContext;
 
-    return IsCXX11UnevaluatedField ? IMA_Field_Uneval_Context
-                                   : IMA_Error_StaticContext;
+    return AbstractInstanceResult ? AbstractInstanceResult
+                                  : IMA_Error_StaticContext;
   }
 
   CXXRecordDecl *contextClass;
@@ -172,8 +188,8 @@ static IMAKind ClassifyImplicitMemberAccess(Sema &SemaRef,
   // which case it's an error if any of those members are selected).
   if (isProvablyNotDerivedFrom(SemaRef, contextClass, Classes))
     return hasNonInstance ? IMA_Mixed_Unrelated :
-           IsCXX11UnevaluatedField ? IMA_Field_Uneval_Context :
-                                     IMA_Error_Unrelated;
+           AbstractInstanceResult ? AbstractInstanceResult :
+                                    IMA_Error_Unrelated;
 
   return (hasNonInstance ? IMA_Mixed : IMA_Instance);
 }
@@ -233,6 +249,7 @@ Sema::BuildPossibleImplicitMemberExpr(const CXXScopeSpec &SS,
       << R.getLookupNameInfo().getName();
     // Fall through.
   case IMA_Static:
+  case IMA_Abstract:
   case IMA_Mixed_StaticContext:
   case IMA_Unresolved_StaticContext:
     if (TemplateArgs || TemplateKWLoc.isValid())
@@ -588,19 +605,35 @@ LookupMemberExprInRecord(Sema &SemaRef, LookupResult &R,
                                                  R.getLookupKind(), NULL,
                                                  &SS, Validator, DC);
   R.clear();
-  if (NamedDecl *ND = Corrected.getCorrectionDecl()) {
+  if (Corrected.isResolved() && !Corrected.isKeyword()) {
     std::string CorrectedStr(
         Corrected.getAsString(SemaRef.getLangOpts()));
     std::string CorrectedQuotedStr(
         Corrected.getQuoted(SemaRef.getLangOpts()));
+    bool droppedSpecifier =
+        Corrected.WillReplaceSpecifier() && Name.getAsString() == CorrectedStr;
+
     R.setLookupName(Corrected.getCorrection());
-    R.addDecl(ND);
+    for (TypoCorrection::decl_iterator DI = Corrected.begin(),
+                                       DIEnd = Corrected.end();
+         DI != DIEnd; ++DI) {
+      R.addDecl(*DI);
+    }
+    R.resolveKind();
+
     SemaRef.Diag(R.getNameLoc(), diag::err_no_member_suggest)
-      << Name << DC << CorrectedQuotedStr << SS.getRange()
+      << Name << DC << droppedSpecifier << CorrectedQuotedStr << SS.getRange()
       << FixItHint::CreateReplacement(Corrected.getCorrectionRange(),
                                       CorrectedStr);
-    SemaRef.Diag(ND->getLocation(), diag::note_previous_decl)
-      << ND->getDeclName();
+
+    // If we're typo-correcting to an overloaded name, we don't yet have enough
+    // information to do overload resolution, so we don't know which previous
+    // declaration to point to.
+    if (!Corrected.isOverloaded()) {
+      NamedDecl *ND = Corrected.getCorrectionDecl();
+      SemaRef.Diag(ND->getLocation(), diag::note_previous_decl)
+        << ND->getDeclName();
+    }
   }
 
   return false;
@@ -670,6 +703,7 @@ ExprResult
 Sema::BuildAnonymousStructUnionMemberReference(const CXXScopeSpec &SS,
                                                SourceLocation loc,
                                                IndirectFieldDecl *indirectField,
+                                               DeclAccessPair foundDecl,
                                                Expr *baseObjectExpr,
                                                SourceLocation opLoc) {
   // First, build the expression that refers to the base object.
@@ -747,15 +781,15 @@ Sema::BuildAnonymousStructUnionMemberReference(const CXXScopeSpec &SS,
   if (!baseVariable) {
     FieldDecl *field = cast<FieldDecl>(*FI);
     
-    // FIXME: use the real found-decl info!
-    DeclAccessPair foundDecl = DeclAccessPair::make(field, field->getAccess());
-    
     // Make a nameInfo that properly uses the anonymous name.
     DeclarationNameInfo memberNameInfo(field->getDeclName(), loc);
     
     result = BuildFieldReferenceExpr(*this, result, baseObjectIsPointer,
                                      EmptySS, field, foundDecl,
                                      memberNameInfo).take();
+    if (!result)
+      return ExprError();
+
     baseObjectIsPointer = false;
     
     // FIXME: check qualified member access
@@ -766,14 +800,15 @@ Sema::BuildAnonymousStructUnionMemberReference(const CXXScopeSpec &SS,
   
   while (FI != FEnd) {
     FieldDecl *field = cast<FieldDecl>(*FI++);
-    
+
     // FIXME: these are somewhat meaningless
     DeclarationNameInfo memberNameInfo(field->getDeclName(), loc);
-    DeclAccessPair foundDecl = DeclAccessPair::make(field, field->getAccess());
-    
+    DeclAccessPair fakeFoundDecl =
+        DeclAccessPair::make(field, field->getAccess());
+
     result = BuildFieldReferenceExpr(*this, result, /*isarrow*/ false,
-                                     (FI == FEnd? SS : EmptySS), field, 
-                                     foundDecl, memberNameInfo).take();
+                                     (FI == FEnd? SS : EmptySS), field,
+                                     fakeFoundDecl, memberNameInfo).take();
   }
   
   return Owned(result);
@@ -957,7 +992,8 @@ Sema::BuildMemberReferenceExpr(Expr *BaseExpr, QualType BaseExprType,
     // We may have found a field within an anonymous union or struct
     // (C++ [class.union]).
     return BuildAnonymousStructUnionMemberReference(SS, MemberLoc, FD,
-                                                    BaseExpr, OpLoc);
+                                                    FoundDecl, BaseExpr,
+                                                    OpLoc);
 
   if (VarDecl *Var = dyn_cast<VarDecl>(MemberDecl)) {
     return Owned(BuildMemberExpr(*this, Context, BaseExpr, IsArrow, SS,
@@ -1100,10 +1136,8 @@ Sema::LookupMemberExpr(LookupResult &R, ExprResult &BaseExpr,
       //   foo->bar
       // This is actually well-formed in C++ if MyRecord has an
       // overloaded operator->, but that should have been dealt with
-      // by now.
-      Diag(OpLoc, diag::err_typecheck_member_reference_suggestion)
-        << BaseType << int(IsArrow) << BaseExpr.get()->getSourceRange()
-        << FixItHint::CreateReplacement(OpLoc, ".");
+      // by now--or a diagnostic message already issued if a problem
+      // was encountered while looking for the overloaded operator->.
       IsArrow = false;
     } else if (BaseType->isFunctionType()) {
       goto fail;
@@ -1280,7 +1314,7 @@ Sema::LookupMemberExpr(LookupResult &R, ExprResult &BaseExpr,
           Diags.getDiagnosticLevel(diag::warn_arc_repeated_use_of_weak,
                                    MemberLoc);
         if (Level != DiagnosticsEngine::Ignored)
-          getCurFunction()->recordUseOfWeak(Result);
+          recordUseOfEvaluatedWeak(Result);
       }
     }
 
@@ -1331,8 +1365,9 @@ Sema::LookupMemberExpr(LookupResult &R, ExprResult &BaseExpr,
           if (DiagnoseUseOfDecl(OMD, MemberLoc))
             return ExprError();
           Selector SetterSel =
-            SelectorTable::constructSetterName(PP.getIdentifierTable(),
-                                               PP.getSelectorTable(), Member);
+            SelectorTable::constructSetterSelector(PP.getIdentifierTable(),
+                                                   PP.getSelectorTable(),
+                                                   Member);
           ObjCMethodDecl *SMD = 0;
           if (Decl *SDecl = FindGetterSetterNameDecl(OPT, /*Property id*/0, 
                                                      SetterSel, Context))
@@ -1379,8 +1414,9 @@ Sema::LookupMemberExpr(LookupResult &R, ExprResult &BaseExpr,
       // If we found a getter then this may be a valid dot-reference, we
       // will look for the matching setter, in case it is needed.
       Selector SetterSel =
-        SelectorTable::constructSetterName(PP.getIdentifierTable(),
-                                           PP.getSelectorTable(), Member);
+        SelectorTable::constructSetterSelector(PP.getIdentifierTable(),
+                                               PP.getSelectorTable(),
+                                               Member);
       ObjCMethodDecl *Setter = IFace->lookupClassMethod(SetterSel);
       if (!Setter) {
         // If this reference is in an @implementation, also check for 'private'
@@ -1653,7 +1689,8 @@ Sema::BuildImplicitMemberExpr(const CXXScopeSpec &SS,
   // (C++ [class.union]).
   // FIXME: template-ids inside anonymous structs?
   if (IndirectFieldDecl *FD = R.getAsSingle<IndirectFieldDecl>())
-    return BuildAnonymousStructUnionMemberReference(SS, R.getNameLoc(), FD);
+    return BuildAnonymousStructUnionMemberReference(SS, R.getNameLoc(), FD,
+                                                    R.begin().getPair());
   
   // If this is known to be an instance access, go ahead and build an
   // implicit 'this' expression now.

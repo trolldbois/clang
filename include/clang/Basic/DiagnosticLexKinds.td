@@ -180,8 +180,8 @@ def warn_cxx11_compat_binary_literal : Warning<
   "binary integer literals are incompatible with C++ standards before C++1y">,
   InGroup<CXXPre1yCompatPedantic>, DefaultIgnore;
 def err_pascal_string_too_long : Error<"Pascal string is too long">;
-def warn_octal_escape_too_large : ExtWarn<"octal escape sequence out of range">;
-def warn_hex_escape_too_large : ExtWarn<"hex escape sequence out of range">;
+def err_octal_escape_too_large : Error<"octal escape sequence out of range">;
+def err_hex_escape_too_large : Error<"hex escape sequence out of range">;
 def ext_string_too_long : Extension<"string literal of length %0 exceeds "
   "maximum length %1 that %select{C90|ISO C99|C++}2 compilers are required to "
   "support">, InGroup<OverlengthStrings>;
@@ -408,8 +408,6 @@ def warn_pragma_include_alias_expected_filename :
 
 def err__Pragma_malformed : Error<
   "_Pragma takes a parenthesized string literal">;
-def err_pragma_comment_malformed : Error<
-  "pragma comment requires parenthesized identifier and optional string">;
 def err_pragma_message_malformed : Error<
   "pragma %select{message|warning|error}0 requires parenthesized string">;
 def err_pragma_push_pop_macro_malformed : Error<
@@ -452,7 +450,6 @@ def warn_pragma_diagnostic_unknown_warning :
 def warn_pragma_debug_unexpected_command : Warning<
   "unexpected debug command '%0'">;
 
-def err_pragma_comment_unknown_kind : Error<"unknown kind of pragma comment">;
 def err_defined_macro_name : Error<"'defined' cannot be used as a macro name">;
 def err_paste_at_start : Error<
   "'##' cannot appear at start of macro expansion">;
@@ -463,6 +460,11 @@ def err_unterm_macro_invoc : Error<
   "unterminated function-like macro invocation">;
 def err_too_many_args_in_macro_invoc : Error<
   "too many arguments provided to function-like macro invocation">;
+def note_suggest_parens_for_macro : Note<
+  "parentheses are required around macro argument containing braced "
+  "initializer list">;
+def note_init_list_at_beginning_of_macro_argument : Note<
+  "cannot use initializer list at the beginning of a macro argument">;
 def err_too_few_args_in_macro_invoc : Error<
   "too few arguments provided to function-like macro invocation">;
 def err_pp_bad_paste : Error<
@@ -582,8 +584,18 @@ def warn_auto_module_import : Warning<
   "import of module '%1'">, InGroup<AutoImport>, DefaultIgnore;
 def warn_uncovered_module_header : Warning<
   "umbrella header for module '%0' does not include header '%1'">, 
-  InGroup<IncompleteUmbrella>;
+  InGroup<IncompleteUmbrella>, DefaultIgnore;
+def warn_forgotten_module_header : Warning<
+  "header '%0' is included in module '%1' but not listed in module map">,
+  InGroup<IncompleteModule>, DefaultIgnore;
 def err_expected_id_building_module : Error<
   "expected a module name in '__building_module' expression">;
+def error_use_of_private_header_outside_module : Error<
+  "use of private header from outside its module: '%0'">;
   
+def warn_header_guard : Warning<
+  "%0 is used as a header guard here, followed by #define of a different macro">,
+  InGroup<DiagGroup<"header-guard">>;
+def note_header_guard : Note<
+  "%0 is defined here; did you mean %1?">;  
 }
