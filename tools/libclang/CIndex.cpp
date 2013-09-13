@@ -23,6 +23,7 @@
 #include "CXType.h"
 #include "CursorVisitor.h"
 #include "SimpleFormatContext.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/Version.h"
@@ -1936,6 +1937,9 @@ void OMPClauseEnqueue::VisitOMPDefaultClause(const OMPDefaultClause *C) { }
 void OMPClauseEnqueue::VisitOMPPrivateClause(const OMPPrivateClause *C) {
   PROCESS_OMP_CLAUSE_LIST(OMPPrivateClause, C)
 }
+void OMPClauseEnqueue::VisitOMPSharedClause(const OMPSharedClause *C) {
+  PROCESS_OMP_CLAUSE_LIST(OMPSharedClause, C)
+}
 #undef PROCESS_OMP_CLAUSE_LIST
 }
 void EnqueueVisitor::EnqueueChildren(const OMPClause *S) {
@@ -2072,7 +2076,6 @@ void EnqueueVisitor::VisitDeclStmt(const DeclStmt *S) {
 }
 void EnqueueVisitor::VisitDesignatedInitExpr(const DesignatedInitExpr *E) {
   AddStmt(E->getInit());
-  typedef DesignatedInitExpr::Designator Designator;
   for (DesignatedInitExpr::const_reverse_designators_iterator
          D = E->designators_rbegin(), DEnd = E->designators_rend();
          D != DEnd; ++D) {
@@ -2256,8 +2259,7 @@ bool CursorVisitor::IsInRegionOfInterest(CXCursor C) {
 bool CursorVisitor::RunVisitorWorkList(VisitorWorkList &WL) {
   while (!WL.empty()) {
     // Dequeue the worklist item.
-    VisitorJob LI = WL.back();
-    WL.pop_back();
+    VisitorJob LI = WL.pop_back_val();
 
     // Set the Parent field, then back to its old value once we're done.
     SetParentRAII SetParent(Parent, StmtParent, LI.getParent());

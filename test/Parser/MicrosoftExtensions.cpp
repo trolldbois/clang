@@ -95,10 +95,10 @@ void template_uuid()
 }
 
 
-template <class T, const GUID* g = &__uuidof(T)>
+template <class T, const GUID* g = &__uuidof(T)> // expected-note {{template parameter is declared here}}
 class COM_CLASS_TEMPLATE  { };
 
-typedef COM_CLASS_TEMPLATE<struct_with_uuid, &__uuidof(struct_with_uuid)> COM_TYPE_1;
+typedef COM_CLASS_TEMPLATE<struct_with_uuid, &*&__uuidof(struct_with_uuid)> COM_TYPE_1; // expected-warning {{non-type template argument containing a dereference operation is a Microsoft extension}}
 typedef COM_CLASS_TEMPLATE<struct_with_uuid> COM_TYPE_2;
 
 template <class T, const GUID& g>
@@ -112,6 +112,28 @@ typedef COM_CLASS_TEMPLATE_REF<struct_with_uuid, __uuidof(struct_with_uuid)> COM
   }
   struct __declspec(uuid("000000A0-0000-0000-C000-000000000049")) late_defined_uuid;
 
+COM_CLASS_TEMPLATE_REF<int, __uuidof(struct_with_uuid)> good_template_arg;
+
+COM_CLASS_TEMPLATE<int, __uuidof(struct_with_uuid)> bad_template_arg; // expected-error {{non-type template argument of type 'const _GUID' is not a constant expression}}
+
+namespace PR16911 {
+struct __declspec(uuid("{12345678-1234-1234-1234-1234567890aB}")) uuid;
+struct __declspec(uuid("{12345678-1234-1234-1234-1234567890aB}")) uuid2;
+
+template <typename T, typename T2>
+struct thing {
+};
+
+struct empty {};
+struct inher : public thing<empty, uuid2> {};
+
+struct __declspec(uuid("{12345678-1234-1234-1234-1234567890aB}")) uuid;
+const struct _GUID *w = &__uuidof(inher); // expected-error{{cannot call operator __uuidof on a type with no GUID}}
+const struct _GUID *x = &__uuidof(thing<uuid, inher>);
+const struct _GUID *y = &__uuidof(thing<uuid2, uuid>); // expected-error{{cannot call operator __uuidof on a type with multiple GUIDs}}
+thing<uuid2, uuid> thing_obj = thing<uuid2, uuid>();
+const struct _GUID *z = &__uuidof(thing_obj); // expected-error{{cannot call operator __uuidof on a type with multiple GUIDs}}
+}
 
 class CtorCall {
 public:
@@ -149,7 +171,9 @@ void missing_template_keyword(){
 
 
 
-class AAAA { };
+class AAAA {
+   typedef int D;
+};
 
 template <typename T>
 class SimpleTemplate {};
@@ -171,6 +195,12 @@ void redundant_typename() {
    int k = typename var;// expected-error {{expected a qualified name after 'typename'}}
 }
 
+template <typename T>
+struct TypenameWrongPlace {
+  typename typedef T::D D;// expected-warning {{expected a qualified name after 'typename'}}
+};
+
+extern TypenameWrongPlace<AAAA> PR16925;
 
 __interface MicrosoftInterface;
 __interface MicrosoftInterface {

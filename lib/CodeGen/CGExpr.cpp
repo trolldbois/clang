@@ -261,7 +261,8 @@ pushTemporaryCleanup(CodeGenFunction &CGF, const MaterializeTemporaryExpr *M,
     if (E->getType()->isArrayType()) {
       CleanupFn = CodeGenFunction(CGF.CGM).generateDestroyHelper(
           cast<llvm::Constant>(ReferenceTemporary), E->getType(),
-          CodeGenFunction::destroyCXXObject, CGF.getLangOpts().Exceptions);
+          CodeGenFunction::destroyCXXObject, CGF.getLangOpts().Exceptions,
+          dyn_cast_or_null<VarDecl>(M->getExtendingDecl()));
       CleanupArg = llvm::Constant::getNullValue(CGF.Int8PtrTy);
     } else {
       CleanupFn =
@@ -1937,7 +1938,7 @@ LValue CodeGenFunction::EmitPredefinedLValue(const PredefinedExpr *E) {
   case PredefinedExpr::Function:
   case PredefinedExpr::LFunction:
   case PredefinedExpr::PrettyFunction: {
-    unsigned IdentType = E->getIdentType();
+    PredefinedExpr::IdentType IdentType = E->getIdentType();
     std::string GlobalVarName;
 
     switch (IdentType) {
@@ -1961,17 +1962,28 @@ LValue CodeGenFunction::EmitPredefinedLValue(const PredefinedExpr *E) {
       FnName = FnName.substr(1);
     GlobalVarName += FnName;
 
+    // If this is outside of a function use the top level decl.
     const Decl *CurDecl = CurCodeDecl;
-    if (CurDecl == 0)
+    if (CurDecl == 0 || isa<VarDecl>(CurDecl))
       CurDecl = getContext().getTranslationUnitDecl();
 
-    std::string FunctionName =
-        (isa<BlockDecl>(CurDecl)
-         ? FnName.str()
-         : PredefinedExpr::ComputeName((PredefinedExpr::IdentType)IdentType,
-                                       CurDecl));
+    const Type *ElemType = E->getType()->getArrayElementTypeNoTypeQual();
+    std::string FunctionName;
+    if (isa<BlockDecl>(CurDecl)) {
+      // Blocks use the mangled function name.
+      // FIXME: ComputeName should handle blocks.
+      FunctionName = FnName.str();
+    } else if (isa<CapturedDecl>(CurDecl)) {
+      // For a captured statement, the function name is its enclosing
+      // function name not the one compiler generated.
+      FunctionName = PredefinedExpr::ComputeName(IdentType, CurDecl);
+    } else {
+      FunctionName = PredefinedExpr::ComputeName(IdentType, CurDecl);
+      assert(cast<ConstantArrayType>(E->getType())->getSize() - 1 ==
+                 FunctionName.size() &&
+             "Computed __func__ length differs from type!");
+    }
 
-    const Type* ElemType = E->getType()->getArrayElementTypeNoTypeQual();
     llvm::Constant *C;
     if (ElemType->isWideCharType()) {
       SmallString<32> RawChars;
@@ -2083,8 +2095,8 @@ llvm::Constant *CodeGenFunction::EmitCheckSourceLocation(SourceLocation Loc) {
     PLoc.isValid() ? cast<llvm::Constant>(
                        Builder.CreateGlobalStringPtr(PLoc.getFilename()))
                    : llvm::Constant::getNullValue(Int8PtrTy),
-    Builder.getInt32(PLoc.getLine()),
-    Builder.getInt32(PLoc.getColumn())
+    Builder.getInt32(PLoc.isValid() ? PLoc.getLine() : 0),
+    Builder.getInt32(PLoc.isValid() ? PLoc.getColumn() : 0)
   };
 
   return llvm::ConstantStruct::getAnon(Data);
@@ -2995,7 +3007,8 @@ CodeGenFunction::EmitCXXTypeidLValue(const CXXTypeidExpr *E) {
 }
 
 llvm::Value *CodeGenFunction::EmitCXXUuidofExpr(const CXXUuidofExpr *E) {
-  return CGM.GetAddrOfUuidDescriptor(E);
+  return Builder.CreateBitCast(CGM.GetAddrOfUuidDescriptor(E),
+                               ConvertType(E->getType())->getPointerTo());
 }
 
 LValue CodeGenFunction::EmitCXXUuidofLValue(const CXXUuidofExpr *E) {

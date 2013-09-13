@@ -1682,6 +1682,7 @@ Clang provides overloaded builtins giving direct access to the three key ARM
 instructions for implementing atomic operations.
 
 .. code-block:: c
+
   T __builtin_arm_ldrex(const volatile T *addr);
   int __builtin_arm_strex(T val, volatile T *addr);
   void __builtin_arm_clrex(void);
@@ -2021,6 +2022,33 @@ Use ``__attribute__((shared_locks_required(...)))`` on a function declaration
 to specify that the function must be called while holding the listed shared
 locks.  Arguments must be lockable type, and there must be at least one
 argument.
+
+Consumed Annotation Checking
+============================
+
+Clang supports additional attributes for checking basic resource management
+properties, specifically for unique objects that have a single owning reference.
+The following attributes are currently supported, although **the implementation
+for these annotations is currently in development and are subject to change.**
+
+``consumes``
+------------
+
+Use ``__attribute__((consumes))`` on a method that transitions an object into
+the consumed state.
+
+``callable_when_unconsumed``
+----------------------------
+
+Use ``__attribute__((callable_when_unconsumed))`` to indicate that a method may
+only be called when the object is not in the consumed state.
+
+``tests_unconsumed``
+--------------------
+
+Use `__attribute__((tests_unconsumed))`` to indicate that a method returns true
+if the object is in the unconsumed state.
+
 
 Type Safety Checking
 ====================

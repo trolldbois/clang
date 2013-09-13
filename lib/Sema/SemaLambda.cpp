@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 #include "clang/Sema/DeclSpec.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/Basic/TargetInfo.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Sema/Initialization.h"
 #include "clang/Sema/Lookup.h"
@@ -114,10 +115,19 @@ Sema::getCurrentMangleNumberContext(const DeclContext *DC,
     //  -- the in-class initializers of class members
   case DefaultArgument:
     //  -- default arguments appearing in class definitions
-    return &ExprEvalContexts.back().getMangleNumberingContext();
+    return &ExprEvalContexts.back().getMangleNumberingContext(Context);
   }
 
   llvm_unreachable("unexpected context");
+}
+
+MangleNumberingContext &
+Sema::ExpressionEvaluationContextRecord::getMangleNumberingContext(
+    ASTContext &Ctx) {
+  assert(ManglingContextDecl && "Need to have a context declaration");
+  if (!MangleNumbering)
+    MangleNumbering = Ctx.createMangleNumberingContext();
+  return *MangleNumbering;
 }
 
 CXXMethodDecl *Sema::startLambdaDefinition(CXXRecordDecl *Class,
@@ -539,7 +549,8 @@ void Sema::ActOnStartOfLambdaDefinition(LambdaIntroducer &Intro,
     // C++11 [expr.prim.lambda]p4:
     //   If a lambda-expression does not include a lambda-declarator, it is as 
     //   if the lambda-declarator were ().
-    FunctionProtoType::ExtProtoInfo EPI;
+    FunctionProtoType::ExtProtoInfo EPI(Context.getDefaultCallingConvention(
+        /*IsVariadic=*/false, /*IsCXXMethod=*/true));
     EPI.HasTrailingReturn = true;
     EPI.TypeQuals |= DeclSpec::TQ_const;
     QualType MethodTy = Context.getFunctionType(Context.DependentTy, None,
@@ -819,17 +830,20 @@ static void addFunctionPointerConversion(Sema &S,
   QualType FunctionTy;
   {
     FunctionProtoType::ExtProtoInfo ExtInfo = Proto->getExtProtoInfo();
+    CallingConv CC = S.Context.getDefaultCallingConvention(
+        Proto->isVariadic(), /*IsCXXMethod=*/false);
+    ExtInfo.ExtInfo = ExtInfo.ExtInfo.withCallingConv(CC);
     ExtInfo.TypeQuals = 0;
     FunctionTy = S.Context.getFunctionType(Proto->getResultType(),
                                            Proto->getArgTypes(), ExtInfo);
     FunctionPtrTy = S.Context.getPointerType(FunctionTy);
   }
-  
-  FunctionProtoType::ExtProtoInfo ExtInfo;
+
+  FunctionProtoType::ExtProtoInfo ExtInfo(S.Context.getDefaultCallingConvention(
+      /*IsVariadic=*/false, /*IsCXXMethod=*/true));
   ExtInfo.TypeQuals = Qualifiers::Const;
-  QualType ConvTy =
-    S.Context.getFunctionType(FunctionPtrTy, None, ExtInfo);
-  
+  QualType ConvTy = S.Context.getFunctionType(FunctionPtrTy, None, ExtInfo);
+
   SourceLocation Loc = IntroducerRange.getBegin();
   DeclarationName Name
     = S.Context.DeclarationNames.getCXXConversionFunctionName(
@@ -893,8 +907,9 @@ static void addBlockPointerConversion(Sema &S,
         Proto->getResultType(), Proto->getArgTypes(), ExtInfo);
     BlockPtrTy = S.Context.getBlockPointerType(FunctionTy);
   }
-  
-  FunctionProtoType::ExtProtoInfo ExtInfo;
+
+  FunctionProtoType::ExtProtoInfo ExtInfo(S.Context.getDefaultCallingConvention(
+      /*IsVariadic=*/false, /*IsCXXMethod=*/true));
   ExtInfo.TypeQuals = Qualifiers::Const;
   QualType ConvTy = S.Context.getFunctionType(BlockPtrTy, None, ExtInfo);
   
@@ -1100,7 +1115,7 @@ ExprResult Sema::BuildBlockForLambdaConversion(SourceLocation CurrentLocation,
         Lambda->lookup(
           Context.DeclarationNames.getCXXOperatorName(OO_Call)).front());
   CallOperator->setReferenced();
-  CallOperator->setUsed();
+  CallOperator->markUsed(Context);
 
   ExprResult Init = PerformCopyInitialization(
                       InitializedEntity::InitializeBlock(ConvLocation, 

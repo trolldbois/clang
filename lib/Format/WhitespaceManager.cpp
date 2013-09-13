@@ -185,19 +185,17 @@ void WhitespaceManager::alignTrailingComments(unsigned Start, unsigned End,
 }
 
 void WhitespaceManager::alignEscapedNewlines() {
-  unsigned MaxEndOfLine = 0;
+  unsigned MaxEndOfLine =
+      Style.AlignEscapedNewlinesLeft ? 0 : Style.ColumnLimit;
   unsigned StartOfMacro = 0;
   for (unsigned i = 1, e = Changes.size(); i < e; ++i) {
     Change &C = Changes[i];
     if (C.NewlinesBefore > 0) {
       if (C.ContinuesPPDirective) {
-        if (Style.AlignEscapedNewlinesLeft)
-          MaxEndOfLine = std::max(C.PreviousEndOfTokenColumn + 2, MaxEndOfLine);
-        else
-          MaxEndOfLine = Style.ColumnLimit;
+        MaxEndOfLine = std::max(C.PreviousEndOfTokenColumn + 2, MaxEndOfLine);
       } else {
         alignEscapedNewlines(StartOfMacro + 1, i, MaxEndOfLine);
-        MaxEndOfLine = 0;
+        MaxEndOfLine = Style.AlignEscapedNewlinesLeft ? 0 : Style.ColumnLimit;
         StartOfMacro = i;
       }
     }
@@ -223,14 +221,14 @@ void WhitespaceManager::generateChanges() {
   for (unsigned i = 0, e = Changes.size(); i != e; ++i) {
     const Change &C = Changes[i];
     if (C.CreateReplacement) {
-      std::string ReplacementText =
-          C.PreviousLinePostfix +
-          (C.ContinuesPPDirective
-               ? getNewlineText(C.NewlinesBefore, C.Spaces,
-                                C.PreviousEndOfTokenColumn,
-                                C.EscapedNewlineColumn)
-               : getNewlineText(C.NewlinesBefore, C.Spaces)) +
-          C.CurrentLinePrefix;
+      std::string ReplacementText = C.PreviousLinePostfix;
+      if (C.ContinuesPPDirective)
+        appendNewlineText(ReplacementText, C.NewlinesBefore,
+                          C.PreviousEndOfTokenColumn, C.EscapedNewlineColumn);
+      else
+        appendNewlineText(ReplacementText, C.NewlinesBefore);
+      appendIndentText(ReplacementText, C.Spaces);
+      ReplacementText.append(C.CurrentLinePrefix);
       storeReplacement(C.OriginalWhitespaceRange, ReplacementText);
     }
   }
@@ -248,34 +246,33 @@ void WhitespaceManager::storeReplacement(const SourceRange &Range,
       SourceMgr, CharSourceRange::getCharRange(Range), Text));
 }
 
-std::string WhitespaceManager::getNewlineText(unsigned Newlines,
-                                              unsigned Spaces) {
-  return std::string(Newlines, '\n') + getIndentText(Spaces);
+void WhitespaceManager::appendNewlineText(std::string &Text,
+                                          unsigned Newlines) {
+  for (unsigned i = 0; i < Newlines; ++i)
+    Text.append(UseCRLF ? "\r\n" : "\n");
 }
 
-std::string WhitespaceManager::getNewlineText(unsigned Newlines,
-                                              unsigned Spaces,
-                                              unsigned PreviousEndOfTokenColumn,
-                                              unsigned EscapedNewlineColumn) {
-  std::string NewlineText;
+void WhitespaceManager::appendNewlineText(std::string &Text, unsigned Newlines,
+                                          unsigned PreviousEndOfTokenColumn,
+                                          unsigned EscapedNewlineColumn) {
   if (Newlines > 0) {
     unsigned Offset =
         std::min<int>(EscapedNewlineColumn - 1, PreviousEndOfTokenColumn);
     for (unsigned i = 0; i < Newlines; ++i) {
-      NewlineText += std::string(EscapedNewlineColumn - Offset - 1, ' ');
-      NewlineText += "\\\n";
+      Text.append(std::string(EscapedNewlineColumn - Offset - 1, ' '));
+      Text.append(UseCRLF ? "\\\r\n" : "\\\n");
       Offset = 0;
     }
   }
-  return NewlineText + getIndentText(Spaces);
 }
 
-std::string WhitespaceManager::getIndentText(unsigned Spaces) {
-  if (!Style.UseTab)
-    return std::string(Spaces, ' ');
-
-  return std::string(Spaces / Style.IndentWidth, '\t') +
-         std::string(Spaces % Style.IndentWidth, ' ');
+void WhitespaceManager::appendIndentText(std::string &Text, unsigned Spaces) {
+  if (!Style.UseTab) {
+    Text.append(std::string(Spaces, ' '));
+  } else {
+    Text.append(std::string(Spaces / Style.TabWidth, '\t'));
+    Text.append(std::string(Spaces % Style.TabWidth, ' '));
+  }
 }
 
 } // namespace format

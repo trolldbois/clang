@@ -152,6 +152,10 @@ public:
                                    StringRef Namespace);
   virtual void PragmaDiagnostic(SourceLocation Loc, StringRef Namespace,
                                 diag::Mapping Map, StringRef Str);
+  virtual void PragmaWarning(SourceLocation Loc, StringRef WarningSpec,
+                             ArrayRef<int> Ids);
+  virtual void PragmaWarningPush(SourceLocation Loc, int Level);
+  virtual void PragmaWarningPop(SourceLocation Loc);
 
   bool HandleFirstTokOnLine(Token &Tok);
 
@@ -190,11 +194,11 @@ void PrintPPOutputPPCallbacks::WriteLineInfo(unsigned LineNo,
   // Emit #line directives or GNU line markers depending on what mode we're in.
   if (UseLineDirective) {
     OS << "#line" << ' ' << LineNo << ' ' << '"';
-    OS.write(CurFilename.data(), CurFilename.size());
+    OS.write_escaped(CurFilename);
     OS << '"';
   } else {
     OS << '#' << ' ' << LineNo << ' ' << '"';
-    OS.write(CurFilename.data(), CurFilename.size());
+    OS.write_escaped(CurFilename);
     OS << '"';
 
     if (ExtraLen)
@@ -285,7 +289,6 @@ void PrintPPOutputPPCallbacks::FileChanged(SourceLocation Loc,
 
   CurFilename.clear();
   CurFilename += UserLoc.getFilename();
-  Lexer::Stringify(CurFilename);
   FileType = NewFileType;
 
   if (DisableLineMarkers) {
@@ -505,6 +508,36 @@ PragmaDiagnostic(SourceLocation Loc, StringRef Namespace,
     break;
   }
   OS << " \"" << Str << '"';
+  setEmittedDirectiveOnThisLine();
+}
+
+void PrintPPOutputPPCallbacks::PragmaWarning(SourceLocation Loc,
+                                             StringRef WarningSpec,
+                                             ArrayRef<int> Ids) {
+  startNewLineIfNeeded();
+  MoveToLine(Loc);
+  OS << "#pragma warning(" << WarningSpec << ':';
+  for (ArrayRef<int>::iterator I = Ids.begin(), E = Ids.end(); I != E; ++I)
+    OS << ' ' << *I;
+  OS << ')';
+  setEmittedDirectiveOnThisLine();
+}
+
+void PrintPPOutputPPCallbacks::PragmaWarningPush(SourceLocation Loc,
+                                                 int Level) {
+  startNewLineIfNeeded();
+  MoveToLine(Loc);
+  OS << "#pragma warning(push";
+  if (Level)
+    OS << ", " << Level;
+  OS << ')';
+  setEmittedDirectiveOnThisLine();
+}
+
+void PrintPPOutputPPCallbacks::PragmaWarningPop(SourceLocation Loc) {
+  startNewLineIfNeeded();
+  MoveToLine(Loc);
+  OS << "#pragma warning(pop)";
   setEmittedDirectiveOnThisLine();
 }
 

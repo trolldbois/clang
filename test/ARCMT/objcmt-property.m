@@ -1,7 +1,11 @@
 // RUN: rm -rf %t
-// RUN: %clang_cc1 -objcmt-migrate-property -mt-migrate-directory %t %s -x objective-c -fobjc-runtime-has-weak -fobjc-arc -fobjc-default-synthesize-properties -triple x86_64-apple-darwin11
+// RUN: %clang_cc1 -objcmt-migrate-property -objcmt-migrate-readonly-property -mt-migrate-directory %t %s -x objective-c -fobjc-runtime-has-weak -fobjc-arc -fobjc-default-synthesize-properties -triple x86_64-apple-darwin11
 // RUN: c-arcmt-test -mt-migrate-directory %t | arcmt-test -verify-transformed-files %s.result
 // RUN: %clang_cc1 -triple x86_64-apple-darwin10 -fsyntax-only -x objective-c -fobjc-runtime-has-weak -fobjc-arc -fobjc-default-synthesize-properties %s.result
+
+#define WEBKIT_OBJC_METHOD_ANNOTATION(ANNOTATION) ANNOTATION
+#define WEAK_IMPORT_ATTRIBUTE __attribute__((objc_arc_weak_reference_unavailable))
+#define AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER
 
 typedef char BOOL;
 @class NSString;
@@ -87,4 +91,27 @@ typedef char BOOL;
 
 - (BOOL) isinValid;
 - (void) setInValid : (BOOL) arg;
+
+- (void) Nothing;
+- (int) Length;
+- (id) object;
++ (double) D;
+- (void *)JSObject WEBKIT_OBJC_METHOD_ANNOTATION(AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER);
+- (BOOL)isIgnoringInteractionEvents;
+
+- (NSString *)getStringValue;
+- (BOOL)getCounterValue;
+- (void)setStringValue:(NSString *)stringValue AVAILABLE_WEBKIT_VERSION_3_0_AND_LATER;
+- (NSDictionary *)getns_dixtionary;
+
+- (BOOL)is3bar; // watch out
+- (NSString *)get3foo; // watch out
+
+- (BOOL) getM;
+- (BOOL) getMA;
+- (BOOL) getALL;
+- (BOOL) getMANY;
+- (BOOL) getSome;
 @end
+
+

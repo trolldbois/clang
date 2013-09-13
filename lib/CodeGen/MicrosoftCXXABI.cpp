@@ -113,9 +113,33 @@ public:
 
   void EmitCXXDestructors(const CXXDestructorDecl *D);
 
+  const CXXRecordDecl *getThisArgumentTypeForMethod(const CXXMethodDecl *MD) {
+    MD = MD->getCanonicalDecl();
+    if (MD->isVirtual() && !isa<CXXDestructorDecl>(MD)) {
+      MicrosoftVFTableContext::MethodVFTableLocation ML =
+          CGM.getVFTableContext().getMethodVFTableLocation(MD);
+      // The vbases might be ordered differently in the final overrider object
+      // and the complete object, so the "this" argument may sometimes point to
+      // memory that has no particular type (e.g. past the complete object).
+      // In this case, we just use a generic pointer type.
+      // FIXME: might want to have a more precise type in the non-virtual
+      // multiple inheritance case.
+      if (ML.VBase || !ML.VFTableOffset.isZero())
+        return 0;
+    }
+    return MD->getParent();
+  }
+
+  llvm::Value *adjustThisArgumentForVirtualCall(CodeGenFunction &CGF,
+                                                GlobalDecl GD,
+                                                llvm::Value *This);
+
   void BuildInstanceFunctionParams(CodeGenFunction &CGF,
                                    QualType &ResTy,
                                    FunctionArgList &Params);
+
+  llvm::Value *adjustThisParameterInVirtualFunctionPrologue(
+      CodeGenFunction &CGF, GlobalDecl GD, llvm::Value *This);
 
   void EmitInstanceFunctionProlog(CodeGenFunction &CGF);
 
@@ -125,7 +149,10 @@ public:
                            llvm::Value *This,
                            CallExpr::const_arg_iterator ArgBeg,
                            CallExpr::const_arg_iterator ArgEnd);
- 
+
+  llvm::Value *getVirtualFunctionPointer(CodeGenFunction &CGF, GlobalDecl GD,
+                                         llvm::Value *This, llvm::Type *Ty);
+
   void EmitVirtualDestructorCall(CodeGenFunction &CGF,
                                  const CXXDestructorDecl *Dtor,
                                  CXXDtorType DtorType, SourceLocation CallLoc,
@@ -278,6 +305,18 @@ public:
 private:
   /// VBTables - All the vbtables which have been referenced.
   llvm::DenseMap<const CXXRecordDecl *, VBTableVector> VBTablesMap;
+
+  /// Info on the global variable used to guard initialization of static locals.
+  /// The BitIndex field is only used for externally invisible declarations.
+  struct GuardInfo {
+    GuardInfo() : Guard(0), BitIndex(0) {}
+    llvm::GlobalVariable *Guard;
+    unsigned BitIndex;
+  };
+
+  /// Map from DeclContext to the current guard variable.  We assume that the
+  /// AST is visited in source code order.
+  llvm::DenseMap<const DeclContext *, GuardInfo> GuardVariableMap;
 };
 
 }
@@ -412,8 +451,8 @@ void MicrosoftCXXABI::BuildDestructorSignature(const CXXDestructorDecl *Dtor,
   // TODO: 'for base' flag
 
   if (Type == Dtor_Deleting) {
-    // The scalar deleting destructor takes an implicit bool parameter.
-    ArgTys.push_back(CGM.getContext().BoolTy);
+    // The scalar deleting destructor takes an implicit int parameter.
+    ArgTys.push_back(CGM.getContext().IntTy);
   }
 }
 
@@ -421,6 +460,34 @@ void MicrosoftCXXABI::EmitCXXDestructors(const CXXDestructorDecl *D) {
   // The TU defining a dtor is only guaranteed to emit a base destructor.  All
   // other destructor variants are delegating thunks.
   CGM.EmitGlobal(GlobalDecl(D, Dtor_Base));
+}
+
+llvm::Value *MicrosoftCXXABI::adjustThisArgumentForVirtualCall(
+    CodeGenFunction &CGF, GlobalDecl GD, llvm::Value *This) {
+  GD = GD.getCanonicalDecl();
+  const CXXMethodDecl *MD = cast<CXXMethodDecl>(GD.getDecl());
+  if (isa<CXXDestructorDecl>(MD))
+    return This;
+
+  MicrosoftVFTableContext::MethodVFTableLocation ML =
+      CGM.getVFTableContext().getMethodVFTableLocation(GD);
+
+  unsigned AS = cast<llvm::PointerType>(This->getType())->getAddressSpace();
+  llvm::Type *charPtrTy = CGF.Int8Ty->getPointerTo(AS);
+  if (ML.VBase) {
+    This = CGF.Builder.CreateBitCast(This, charPtrTy);
+    llvm::Value *VBaseOffset = CGM.getCXXABI()
+        .GetVirtualBaseClassOffset(CGF, This, MD->getParent(), ML.VBase);
+    This = CGF.Builder.CreateInBoundsGEP(This, VBaseOffset);
+  }
+  CharUnits StaticOffset = ML.VFTableOffset;
+  if (!StaticOffset.isZero()) {
+    assert(StaticOffset.isPositive());
+    This = CGF.Builder.CreateBitCast(This, charPtrTy);
+    This = CGF.Builder
+        .CreateConstInBoundsGEP1_64(This, StaticOffset.getQuantity());
+  }
+  return This;
 }
 
 static bool IsDeletingDtor(GlobalDecl GD) {
@@ -451,10 +518,45 @@ void MicrosoftCXXABI::BuildInstanceFunctionParams(CodeGenFunction &CGF,
       = ImplicitParamDecl::Create(Context, 0,
                                   CGF.CurGD.getDecl()->getLocation(),
                                   &Context.Idents.get("should_call_delete"),
-                                  Context.BoolTy);
+                                  Context.IntTy);
     Params.push_back(ShouldDelete);
     getStructorImplicitParamDecl(CGF) = ShouldDelete;
   }
+}
+
+llvm::Value *MicrosoftCXXABI::adjustThisParameterInVirtualFunctionPrologue(
+    CodeGenFunction &CGF, GlobalDecl GD, llvm::Value *This) {
+  GD = GD.getCanonicalDecl();
+  const CXXMethodDecl *MD = cast<CXXMethodDecl>(GD.getDecl());
+  if (isa<CXXDestructorDecl>(MD))
+    return This;
+
+  // In this ABI, every virtual function takes a pointer to one of the
+  // subobjects that first defines it as the 'this' parameter, rather than a
+  // pointer to ther final overrider subobject. Thus, we need to adjust it back
+  // to the final overrider subobject before use.
+  // See comments in the MicrosoftVFTableContext implementation for the details.
+
+  MicrosoftVFTableContext::MethodVFTableLocation ML =
+      CGM.getVFTableContext().getMethodVFTableLocation(GD);
+  CharUnits Adjustment = ML.VFTableOffset;
+  if (ML.VBase) {
+    const ASTRecordLayout &DerivedLayout =
+        CGF.getContext().getASTRecordLayout(MD->getParent());
+    Adjustment += DerivedLayout.getVBaseClassOffset(ML.VBase);
+  }
+
+  if (Adjustment.isZero())
+    return This;
+
+  unsigned AS = cast<llvm::PointerType>(This->getType())->getAddressSpace();
+  llvm::Type *charPtrTy = CGF.Int8Ty->getPointerTo(AS),
+             *thisTy = This->getType();
+
+  This = CGF.Builder.CreateBitCast(This, charPtrTy);
+  assert(Adjustment.isPositive());
+  This = CGF.Builder.CreateConstGEP1_64(This, -Adjustment.getQuantity());
+  return CGF.Builder.CreateBitCast(This, thisTy);
 }
 
 void MicrosoftCXXABI::EmitInstanceFunctionProlog(CodeGenFunction &CGF) {
@@ -514,6 +616,24 @@ void MicrosoftCXXABI::EmitConstructorCall(CodeGenFunction &CGF,
                         ImplicitParam, ImplicitParamTy, ArgBeg, ArgEnd);
 }
 
+llvm::Value *MicrosoftCXXABI::getVirtualFunctionPointer(CodeGenFunction &CGF,
+                                                        GlobalDecl GD,
+                                                        llvm::Value *This,
+                                                        llvm::Type *Ty) {
+  GD = GD.getCanonicalDecl();
+  CGBuilderTy &Builder = CGF.Builder;
+
+  Ty = Ty->getPointerTo()->getPointerTo();
+  llvm::Value *VPtr = adjustThisArgumentForVirtualCall(CGF, GD, This);
+  llvm::Value *VTable = CGF.GetVTablePtr(VPtr, Ty);
+
+  MicrosoftVFTableContext::MethodVFTableLocation ML =
+      CGM.getVFTableContext().getMethodVFTableLocation(GD);
+  llvm::Value *VFuncPtr =
+      Builder.CreateConstInBoundsGEP1_64(VTable, ML.Index, "vfn");
+  return Builder.CreateLoad(VFuncPtr);
+}
+
 void MicrosoftCXXABI::EmitVirtualDestructorCall(CodeGenFunction &CGF,
                                                 const CXXDestructorDecl *Dtor,
                                                 CXXDtorType DtorType,
@@ -522,20 +642,20 @@ void MicrosoftCXXABI::EmitVirtualDestructorCall(CodeGenFunction &CGF,
   assert(DtorType == Dtor_Deleting || DtorType == Dtor_Complete);
 
   // We have only one destructor in the vftable but can get both behaviors
-  // by passing an implicit bool parameter.
-  const CGFunctionInfo *FInfo
-      = &CGM.getTypes().arrangeCXXDestructor(Dtor, Dtor_Deleting);
+  // by passing an implicit int parameter.
+  const CGFunctionInfo *FInfo =
+      &CGM.getTypes().arrangeCXXDestructor(Dtor, Dtor_Deleting);
   llvm::Type *Ty = CGF.CGM.getTypes().GetFunctionType(*FInfo);
-  llvm::Value *Callee
-      = CGF.BuildVirtualCall(GlobalDecl(Dtor, Dtor_Deleting), This, Ty);
+  llvm::Value *Callee =
+      getVirtualFunctionPointer(CGF, GlobalDecl(Dtor, Dtor_Deleting), This, Ty);
 
   ASTContext &Context = CGF.getContext();
-  llvm::Value *ImplicitParam
-    = llvm::ConstantInt::get(llvm::IntegerType::getInt1Ty(CGF.getLLVMContext()),
+  llvm::Value *ImplicitParam =
+      llvm::ConstantInt::get(llvm::IntegerType::getInt32Ty(CGF.getLLVMContext()),
                              DtorType == Dtor_Deleting);
 
   CGF.EmitCXXMemberCall(Dtor, CallLoc, Callee, ReturnValueSlot(), This,
-                        ImplicitParam, Context.BoolTy, 0, 0);
+                        ImplicitParam, Context.IntTy, 0, 0);
 }
 
 const VBTableVector &
@@ -619,17 +739,86 @@ llvm::Value* MicrosoftCXXABI::InitializeArrayCookie(CodeGenFunction &CGF,
 }
 
 void MicrosoftCXXABI::EmitGuardedInit(CodeGenFunction &CGF, const VarDecl &D,
-                                      llvm::GlobalVariable *DeclPtr,
+                                      llvm::GlobalVariable *GV,
                                       bool PerformInit) {
-  // FIXME: this code was only tested for global initialization.
-  // Not sure whether we want thread-safe static local variables as VS
-  // doesn't make them thread-safe.
+  // MSVC always uses an i32 bitfield to guard initialization, which is *not*
+  // threadsafe.  Since the user may be linking in inline functions compiled by
+  // cl.exe, there's no reason to provide a false sense of security by using
+  // critical sections here.
 
   if (D.getTLSKind())
     CGM.ErrorUnsupported(&D, "dynamic TLS initialization");
 
-  // Emit the initializer and add a global destructor if appropriate.
-  CGF.EmitCXXGlobalVarDeclInit(D, DeclPtr, PerformInit);
+  CGBuilderTy &Builder = CGF.Builder;
+  llvm::IntegerType *GuardTy = CGF.Int32Ty;
+  llvm::ConstantInt *Zero = llvm::ConstantInt::get(GuardTy, 0);
+
+  // Get the guard variable for this function if we have one already.
+  GuardInfo &GI = GuardVariableMap[D.getDeclContext()];
+
+  unsigned BitIndex;
+  if (D.isExternallyVisible()) {
+    // Externally visible variables have to be numbered in Sema to properly
+    // handle unreachable VarDecls.
+    BitIndex = getContext().getManglingNumber(&D);
+    assert(BitIndex > 0);
+    BitIndex--;
+  } else {
+    // Non-externally visible variables are numbered here in CodeGen.
+    BitIndex = GI.BitIndex++;
+  }
+
+  if (BitIndex >= 32) {
+    if (D.isExternallyVisible())
+      ErrorUnsupportedABI(CGF, "more than 32 guarded initializations");
+    BitIndex %= 32;
+    GI.Guard = 0;
+  }
+
+  // Lazily create the i32 bitfield for this function.
+  if (!GI.Guard) {
+    // Mangle the name for the guard.
+    SmallString<256> GuardName;
+    {
+      llvm::raw_svector_ostream Out(GuardName);
+      getMangleContext().mangleStaticGuardVariable(&D, Out);
+      Out.flush();
+    }
+
+    // Create the guard variable with a zero-initializer.  Just absorb linkage
+    // and visibility from the guarded variable.
+    GI.Guard = new llvm::GlobalVariable(CGM.getModule(), GuardTy, false,
+                                     GV->getLinkage(), Zero, GuardName.str());
+    GI.Guard->setVisibility(GV->getVisibility());
+  } else {
+    assert(GI.Guard->getLinkage() == GV->getLinkage() &&
+           "static local from the same function had different linkage");
+  }
+
+  // Pseudo code for the test:
+  // if (!(GuardVar & MyGuardBit)) {
+  //   GuardVar |= MyGuardBit;
+  //   ... initialize the object ...;
+  // }
+
+  // Test our bit from the guard variable.
+  llvm::ConstantInt *Bit = llvm::ConstantInt::get(GuardTy, 1U << BitIndex);
+  llvm::LoadInst *LI = Builder.CreateLoad(GI.Guard);
+  llvm::Value *IsInitialized =
+      Builder.CreateICmpNE(Builder.CreateAnd(LI, Bit), Zero);
+  llvm::BasicBlock *InitBlock = CGF.createBasicBlock("init");
+  llvm::BasicBlock *EndBlock = CGF.createBasicBlock("init.end");
+  Builder.CreateCondBr(IsInitialized, EndBlock, InitBlock);
+
+  // Set our bit in the guard variable and emit the initializer and add a global
+  // destructor if appropriate.
+  CGF.EmitBlock(InitBlock);
+  Builder.CreateStore(Builder.CreateOr(LI, Bit), GI.Guard);
+  CGF.EmitCXXGlobalVarDeclInit(D, GV, PerformInit);
+  Builder.CreateBr(EndBlock);
+
+  // Continue.
+  CGF.EmitBlock(EndBlock);
 }
 
 // Member pointer helpers.

@@ -462,11 +462,16 @@ ExprResult Sema::BuildCXXUuidof(QualType TypeInfoType,
                                 TypeSourceInfo *Operand,
                                 SourceLocation RParenLoc) {
   if (!Operand->getType()->isDependentType()) {
-    if (!CXXUuidofExpr::GetUuidAttrOfType(Operand->getType()))
-      return ExprError(Diag(TypeidLoc, diag::err_uuidof_without_guid));
+    bool HasMultipleGUIDs = false;
+    if (!CXXUuidofExpr::GetUuidAttrOfType(Operand->getType(),
+                                          &HasMultipleGUIDs)) {
+      if (HasMultipleGUIDs)
+        return ExprError(Diag(TypeidLoc, diag::err_uuidof_with_multiple_guids));
+      else
+        return ExprError(Diag(TypeidLoc, diag::err_uuidof_without_guid));
+    }
   }
 
-  // FIXME: add __uuidof semantic analysis for type operand.
   return Owned(new (Context) CXXUuidofExpr(TypeInfoType.withConst(),
                                            Operand,
                                            SourceRange(TypeidLoc, RParenLoc)));
@@ -478,11 +483,16 @@ ExprResult Sema::BuildCXXUuidof(QualType TypeInfoType,
                                 Expr *E,
                                 SourceLocation RParenLoc) {
   if (!E->getType()->isDependentType()) {
-    if (!CXXUuidofExpr::GetUuidAttrOfType(E->getType()) &&
-        !E->isNullPointerConstant(Context, Expr::NPC_ValueDependentIsNull))
-      return ExprError(Diag(TypeidLoc, diag::err_uuidof_without_guid));
+    bool HasMultipleGUIDs = false;
+    if (!CXXUuidofExpr::GetUuidAttrOfType(E->getType(), &HasMultipleGUIDs) &&
+        !E->isNullPointerConstant(Context, Expr::NPC_ValueDependentIsNull)) {
+      if (HasMultipleGUIDs)
+        return ExprError(Diag(TypeidLoc, diag::err_uuidof_with_multiple_guids));
+      else
+        return ExprError(Diag(TypeidLoc, diag::err_uuidof_without_guid));
+    }
   }
-  // FIXME: add __uuidof semantic analysis for type operand.
+
   return Owned(new (Context) CXXUuidofExpr(TypeInfoType.withConst(),
                                            E,
                                            SourceRange(TypeidLoc, RParenLoc)));
@@ -902,8 +912,9 @@ Sema::BuildCXXTypeConstructExpr(TypeSourceInfo *TInfo,
     InitListExpr *List = cast<InitListExpr>(Result.take());
     Result = Owned(CXXFunctionalCastExpr::Create(Context, List->getType(),
                                     Expr::getValueKindForType(TInfo->getType()),
-                                                 TInfo, TyBeginLoc, CK_NoOp,
-                                                 List, /*Path=*/0, RParenLoc));
+                                                 TInfo, CK_NoOp, List,
+                                                 /*Path=*/0,
+                                                 LParenLoc, RParenLoc));
   }
 
   // FIXME: Improve AST representation?
@@ -3511,24 +3522,24 @@ static bool evaluateTypeTrait(Sema &S, TypeTrait Kind, SourceLocation KWLoc,
         << 1 << 1 << 1 << (int)Args.size();
       return false;
     }
-    
-    bool SawVoid = false;
+
+    // Precondition: T and all types in the parameter pack Args shall be
+    // complete types, (possibly cv-qualified) void, or arrays of
+    // unknown bound.
     for (unsigned I = 0, N = Args.size(); I != N; ++I) {
-      if (Args[I]->getType()->isVoidType()) {
-        SawVoid = true;
+      QualType ArgTy = Args[I]->getType();
+      if (ArgTy->isVoidType() || ArgTy->isIncompleteArrayType())
         continue;
-      }
-      
-      if (!Args[I]->getType()->isIncompleteType() &&
-        S.RequireCompleteType(KWLoc, Args[I]->getType(), 
+
+      if (S.RequireCompleteType(KWLoc, ArgTy, 
           diag::err_incomplete_type_used_in_type_trait_expr))
         return false;
     }
-    
-    // If any argument was 'void', of course it won't type-check.
-    if (SawVoid)
+
+    // Make sure the first argument is a complete type.
+    if (Args[0]->getType()->isIncompleteType())
       return false;
-    
+
     SmallVector<OpaqueValueExpr, 2> OpaqueArgExprs;
     SmallVector<Expr *, 2> ArgExprs;
     ArgExprs.reserve(Args.size() - 1);
