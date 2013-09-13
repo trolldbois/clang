@@ -16,8 +16,8 @@
 #include "clang/Driver/ToolChain.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/Compiler.h"
-
 #include <vector>
+#include <set>
 
 namespace clang {
 namespace driver {
@@ -49,6 +49,9 @@ protected:
 
     /// \brief The parsed major, minor, and patch numbers.
     int Major, Minor, Patch;
+
+    /// \brief The text of the parsed major, and major+minor versions.
+    std::string MajorStr, MinorStr;
 
     /// \brief Any textual suffix on the patch number.
     std::string PatchSuffix;
@@ -84,7 +87,7 @@ protected:
 
     // We retain the list of install paths that were considered and rejected in
     // order to print out detailed information in verbose mode.
-    SmallVector<std::string, 4> CandidateGCCInstallPaths;
+    std::set<std::string> CandidateGCCInstallPaths;
 
   public:
     GCCInstallationDetector(const Driver &D, const llvm::Triple &TargetTriple,
@@ -514,6 +517,14 @@ public:
   virtual void
   AddClangCXXStdlibIncludeArgs(const llvm::opt::ArgList &DriverArgs,
                                llvm::opt::ArgStringList &CC1Args) const;
+  virtual bool IsUnwindTablesDefault() const {
+    return true;
+  }
+  virtual bool IsIntegratedAssemblerDefault() const {
+    if (getTriple().getArch() == llvm::Triple::ppc)
+      return true;
+    return Generic_ELF::IsIntegratedAssemblerDefault();
+  }
 
 protected:
   virtual Tool *buildAssembler() const;
@@ -561,7 +572,6 @@ public:
 
   std::string Linker;
   std::vector<std::string> ExtraOpts;
-  bool IsPIEDefault;
 
 protected:
   virtual Tool *buildAssembler() const;

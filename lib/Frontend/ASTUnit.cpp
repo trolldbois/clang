@@ -29,6 +29,7 @@
 #include "clang/Lex/HeaderSearch.h"
 #include "clang/Lex/Preprocessor.h"
 #include "clang/Lex/PreprocessorOptions.h"
+#include "clang/Sema/Sema.h"
 #include "clang/Serialization/ASTReader.h"
 #include "clang/Serialization/ASTWriter.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -2644,11 +2645,6 @@ void ASTUnit::TranslateStoredDiagnostics(
   Result.swap(Out);
 }
 
-static inline bool compLocDecl(std::pair<unsigned, Decl *> L,
-                               std::pair<unsigned, Decl *> R) {
-  return L.first < R.first;
-}
-
 void ASTUnit::addFileLevelDecl(Decl *D) {
   assert(D);
   
@@ -2684,8 +2680,8 @@ void ASTUnit::addFileLevelDecl(Decl *D) {
     return;
   }
 
-  LocDeclsTy::iterator
-    I = std::upper_bound(Decls->begin(), Decls->end(), LocDecl, compLocDecl);
+  LocDeclsTy::iterator I = std::upper_bound(Decls->begin(), Decls->end(),
+                                            LocDecl, llvm::less_first());
 
   Decls->insert(I, LocDecl);
 }
@@ -2709,9 +2705,9 @@ void ASTUnit::findFileRegionDecls(FileID File, unsigned Offset, unsigned Length,
   if (LocDecls.empty())
     return;
 
-  LocDeclsTy::iterator
-    BeginIt = std::lower_bound(LocDecls.begin(), LocDecls.end(),
-                               std::make_pair(Offset, (Decl*)0), compLocDecl);
+  LocDeclsTy::iterator BeginIt =
+      std::lower_bound(LocDecls.begin(), LocDecls.end(),
+                       std::make_pair(Offset, (Decl *)0), llvm::less_first());
   if (BeginIt != LocDecls.begin())
     --BeginIt;
 
@@ -2722,10 +2718,9 @@ void ASTUnit::findFileRegionDecls(FileID File, unsigned Offset, unsigned Length,
          BeginIt->second->isTopLevelDeclInObjCContainer())
     --BeginIt;
 
-  LocDeclsTy::iterator
-    EndIt = std::upper_bound(LocDecls.begin(), LocDecls.end(),
-                             std::make_pair(Offset+Length, (Decl*)0),
-                             compLocDecl);
+  LocDeclsTy::iterator EndIt = std::upper_bound(
+      LocDecls.begin(), LocDecls.end(),
+      std::make_pair(Offset + Length, (Decl *)0), llvm::less_first());
   if (EndIt != LocDecls.end())
     ++EndIt;
   

@@ -136,8 +136,10 @@ void CodeGenFunction::EmitStmt(const Stmt *S) {
   case Stmt::SwitchStmtClass:   EmitSwitchStmt(cast<SwitchStmt>(*S));     break;
   case Stmt::GCCAsmStmtClass:   // Intentional fall-through.
   case Stmt::MSAsmStmtClass:    EmitAsmStmt(cast<AsmStmt>(*S));           break;
-  case Stmt::CapturedStmtClass:
-    EmitCapturedStmt(cast<CapturedStmt>(*S), CR_Default);
+  case Stmt::CapturedStmtClass: {
+    const CapturedStmt *CS = cast<CapturedStmt>(S);
+    EmitCapturedStmt(*CS, CS->getCapturedRegionKind());
+    }
     break;
   case Stmt::ObjCAtTryStmtClass:
     EmitObjCAtTryStmt(cast<ObjCAtTryStmt>(*S));
@@ -1816,9 +1818,6 @@ CodeGenFunction::GenerateCapturedStmtFunction(const CapturedDecl *CD,
                                               const RecordDecl *RD) {
   assert(CapturedStmtInfo &&
     "CapturedStmtInfo should be set when generating the captured function");
-
-  // Check if we should generate debug info for this function.
-  maybeInitializeDebugInfo();
 
   // Build the argument list.
   ASTContext &Ctx = CGM.getContext();

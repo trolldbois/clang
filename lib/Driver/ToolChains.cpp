@@ -8,13 +8,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "ToolChains.h"
-#include "SanitizerArgs.h"
 #include "clang/Basic/ObjCRuntime.h"
 #include "clang/Basic/Version.h"
 #include "clang/Driver/Compilation.h"
 #include "clang/Driver/Driver.h"
 #include "clang/Driver/DriverDiagnostic.h"
 #include "clang/Driver/Options.h"
+#include "clang/Driver/SanitizerArgs.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
@@ -124,7 +124,9 @@ static const char *GetArmArchForMCpu(StringRef Value) {
     .Case("xscale", "xscale")
     .Cases("arm1136j-s", "arm1136jf-s", "arm1176jz-s", "arm1176jzf-s", "armv6")
     .Case("cortex-m0", "armv6m")
-    .Cases("cortex-a8", "cortex-r4", "cortex-a9", "cortex-a15", "armv7")
+    .Cases("cortex-a5", "cortex-a7", "cortex-a8", "armv7")
+    .Cases("cortex-a9", "cortex-a12", "cortex-a15", "armv7")
+    .Cases("cortex-r4", "cortex-r5", "armv7r")
     .Case("cortex-a9-mp", "armv7f")
     .Case("cortex-m3", "armv7m")
     .Case("cortex-m4", "armv7em")
@@ -290,7 +292,7 @@ void DarwinClang::AddLinkRuntimeLibArgs(const ArgList &Args,
     }
   }
 
-  SanitizerArgs Sanitize(getDriver(), Args);
+  const SanitizerArgs &Sanitize = getDriver().getOrParseSanitizerArgs(Args);
 
   // Add Ubsan runtime library, if required.
   if (Sanitize.needsUbsanRt()) {
@@ -907,17 +909,19 @@ Darwin_Generic_GCC::ComputeEffectiveClangTriple(const ArgList &Args,
 /// This is the primary means of forming GCCVersion objects.
 /*static*/
 Generic_GCC::GCCVersion Linux::GCCVersion::Parse(StringRef VersionText) {
-  const GCCVersion BadVersion = { VersionText.str(), -1, -1, -1, "" };
+  const GCCVersion BadVersion = { VersionText.str(), -1, -1, -1, "", "", "" };
   std::pair<StringRef, StringRef> First = VersionText.split('.');
   std::pair<StringRef, StringRef> Second = First.second.split('.');
 
-  GCCVersion GoodVersion = { VersionText.str(), -1, -1, -1, "" };
+  GCCVersion GoodVersion = { VersionText.str(), -1, -1, -1, "", "", "" };
   if (First.first.getAsInteger(10, GoodVersion.Major) ||
       GoodVersion.Major < 0)
     return BadVersion;
+  GoodVersion.MajorStr = First.first.str();
   if (Second.first.getAsInteger(10, GoodVersion.Minor) ||
       GoodVersion.Minor < 0)
     return BadVersion;
+  GoodVersion.MinorStr = Second.first.str();
 
   // First look for a number prefix and parse that if present. Otherwise just
   // stash the entire patch string in the suffix, and leave the number
@@ -935,7 +939,7 @@ Generic_GCC::GCCVersion Linux::GCCVersion::Parse(StringRef VersionText) {
       if (PatchText.slice(0, EndNumber).getAsInteger(10, GoodVersion.Patch) ||
           GoodVersion.Patch < 0)
         return BadVersion;
-      GoodVersion.PatchSuffix = PatchText.substr(EndNumber).str();
+      GoodVersion.PatchSuffix = PatchText.substr(EndNumber);
     }
   }
 
@@ -1019,9 +1023,18 @@ Generic_GCC::GCCInstallationDetector::GCCInstallationDetector(
 
     Prefixes.push_back(GCCToolchainDir);
   } else {
-    Prefixes.push_back(D.SysRoot);
-    Prefixes.push_back(D.SysRoot + "/usr");
+    // If we have a SysRoot, try that first.
+    if (!D.SysRoot.empty()) {
+      Prefixes.push_back(D.SysRoot);
+      Prefixes.push_back(D.SysRoot + "/usr");
+    }
+
+    // Then look for gcc installed alongside clang.
     Prefixes.push_back(D.InstalledDir + "/..");
+
+    // And finally in /usr.
+    if (D.SysRoot.empty())
+      Prefixes.push_back("/usr");
   }
 
   // Loop over the various components which exist and select the best GCC
@@ -1052,7 +1065,7 @@ Generic_GCC::GCCInstallationDetector::GCCInstallationDetector(
 }
 
 void Generic_GCC::GCCInstallationDetector::print(raw_ostream &OS) const {
-  for (SmallVectorImpl<std::string>::const_iterator
+  for (std::set<std::string>::const_iterator
            I = CandidateGCCInstallPaths.begin(),
            E = CandidateGCCInstallPaths.end();
        I != E; ++I)
@@ -1395,9 +1408,11 @@ void Generic_GCC::GCCInstallationDetector::ScanLibDirForGCCTriple(
     llvm::error_code EC;
     for (llvm::sys::fs::directory_iterator LI(LibDir + LibSuffix, EC), LE;
          !EC && LI != LE; LI = LI.increment(EC)) {
-      CandidateGCCInstallPaths.push_back(LI->path());
       StringRef VersionText = llvm::sys::path::filename(LI->path());
       GCCVersion CandidateVersion = GCCVersion::Parse(VersionText);
+      if (CandidateVersion.Major != -1) // Filter obviously bad entries.
+        if (!CandidateGCCInstallPaths.insert(LI->path()).second)
+          continue; // Saw this path before; no need to look at it again.
       if (CandidateVersion.isOlderThan(4, 1, 1))
         continue;
       if (CandidateVersion <= Version)
@@ -2354,8 +2369,6 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
   }
   addPathIfExists(SysRoot + "/lib", Paths);
   addPathIfExists(SysRoot + "/usr/lib", Paths);
-
-  IsPIEDefault = SanitizerArgs(getDriver(), Args).hasZeroBaseShadow(*this);
 }
 
 bool Linux::HasNativeLLVMSupport() const {
@@ -2578,20 +2591,22 @@ void Linux::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
   // equivalent to '/usr/include/c++/X.Y' in almost all cases.
   StringRef LibDir = GCCInstallation.getParentLibPath();
   StringRef InstallDir = GCCInstallation.getInstallPath();
-  StringRef Version = GCCInstallation.getVersion().Text;
   StringRef TripleStr = GCCInstallation.getTriple().str();
+  const GCCVersion &Version = GCCInstallation.getVersion();
 
   if (addLibStdCXXIncludePaths(
-          LibDir.str() + "/../include", "/c++/" + Version.str(), TripleStr,
+          LibDir.str() + "/../include", "/c++/" + Version.Text, TripleStr,
           GCCInstallation.getBiarchSuffix(), DriverArgs, CC1Args))
     return;
 
   const std::string IncludePathCandidates[] = {
     // Gentoo is weird and places its headers inside the GCC install, so if the
-    // first attempt to find the headers fails, try this pattern.
-    InstallDir.str() + "/include/g++-v4",
+    // first attempt to find the headers fails, try these patterns.
+    InstallDir.str() + "/include/g++-v" + Version.MajorStr + "." +
+        Version.MinorStr,
+    InstallDir.str() + "/include/g++-v" + Version.MajorStr,
     // Android standalone toolchain has C++ headers in yet another place.
-    LibDir.str() + "/../" + TripleStr.str() + "/include/c++/" + Version.str(),
+    LibDir.str() + "/../" + TripleStr.str() + "/include/c++/" + Version.Text,
     // Freescale SDK C++ headers are directly in <sysroot>/usr/include/c++,
     // without a subdirectory corresponding to the gcc version.
     LibDir.str() + "/../include/c++",
@@ -2607,7 +2622,7 @@ void Linux::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
 }
 
 bool Linux::isPIEDefault() const {
-  return IsPIEDefault;
+  return getSanitizerArgs().hasZeroBaseShadow(*this);
 }
 
 /// DragonFly - DragonFly tool chain which can call as(1) and ld(1) directly.

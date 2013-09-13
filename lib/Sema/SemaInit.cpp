@@ -837,9 +837,13 @@ void InitListChecker::CheckSubElementType(const InitializedEntity &Entity,
     // C++ initialization is handled later.
   }
 
-  if (ElemType->isScalarType())
+  // FIXME: Need to handle atomic aggregate types with implicit init lists.
+  if (ElemType->isScalarType() || ElemType->isAtomicType())
     return CheckScalarType(Entity, IList, ElemType, Index,
                            StructuredList, StructuredIndex);
+
+  assert((ElemType->isRecordType() || ElemType->isVectorType() ||
+          ElemType->isArrayType()) && "Unexpected type");
 
   if (const ArrayType *arrayType = SemaRef.Context.getAsArrayType(ElemType)) {
     // arrayType can be incomplete if we're initializing a flexible
@@ -1809,22 +1813,15 @@ InitListChecker::CheckDesignatedInitializer(const InitializedEntity &Entity,
         // Name lookup didn't find anything. Determine whether this
         // was a typo for another field name.
         FieldInitializerValidatorCCC Validator(RT->getDecl());
-        TypoCorrection Corrected = SemaRef.CorrectTypo(
-            DeclarationNameInfo(FieldName, D->getFieldLoc()),
-            Sema::LookupMemberName, /*Scope=*/0, /*SS=*/0, Validator,
-            RT->getDecl());
-        if (Corrected) {
-          std::string CorrectedStr(
-              Corrected.getAsString(SemaRef.getLangOpts()));
-          std::string CorrectedQuotedStr(
-              Corrected.getQuoted(SemaRef.getLangOpts()));
+        if (TypoCorrection Corrected = SemaRef.CorrectTypo(
+                DeclarationNameInfo(FieldName, D->getFieldLoc()),
+                Sema::LookupMemberName, /*Scope=*/ 0, /*SS=*/ 0, Validator,
+                RT->getDecl())) {
+          SemaRef.diagnoseTypo(
+              Corrected,
+              SemaRef.PDiag(diag::err_field_designator_unknown_suggest)
+                  << FieldName << CurrentObjectType);
           ReplacementField = Corrected.getCorrectionDeclAs<FieldDecl>();
-          SemaRef.Diag(D->getFieldLoc(),
-                       diag::err_field_designator_unknown_suggest)
-            << FieldName << CurrentObjectType << CorrectedQuotedStr
-            << FixItHint::CreateReplacement(D->getFieldLoc(), CorrectedStr);
-          SemaRef.Diag(ReplacementField->getLocation(),
-                       diag::note_previous_decl) << CorrectedQuotedStr;
           hadError = true;
         } else {
           SemaRef.Diag(D->getFieldLoc(), diag::err_field_designator_unknown)
@@ -5069,7 +5066,9 @@ PerformConstructorInitialization(Sema &S,
                                  MultiExprArg Args,
                                  const InitializationSequence::Step& Step,
                                  bool &ConstructorInitRequiresZeroInit,
-                                 bool IsListInitialization) {
+                                 bool IsListInitialization,
+                                 SourceLocation LBraceLoc,
+                                 SourceLocation RBraceLoc) {
   unsigned NumArgs = Args.size();
   CXXConstructorDecl *Constructor
     = cast<CXXConstructorDecl>(Step.Function.Function);
@@ -5121,15 +5120,17 @@ PerformConstructorInitialization(Sema &S,
     TypeSourceInfo *TSInfo = Entity.getTypeSourceInfo();
     if (!TSInfo)
       TSInfo = S.Context.getTrivialTypeSourceInfo(Entity.getType(), Loc);
-    SourceRange ParenRange;
-    if (Kind.getKind() != InitializationKind::IK_DirectList)
-      ParenRange = Kind.getParenRange();
+    SourceRange ParenOrBraceRange =
+      (Kind.getKind() == InitializationKind::IK_DirectList)
+      ? SourceRange(LBraceLoc, RBraceLoc)
+      : Kind.getParenRange();
 
     CurInit = S.Owned(
       new (S.Context) CXXTemporaryObjectExpr(S.Context, Constructor,
                                              TSInfo, ConstructorArgs,
-                                             ParenRange, IsListInitialization,
+                                             ParenOrBraceRange,
                                              HadMultipleCandidates,
+                                             IsListInitialization,
                                              ConstructorInitRequiresZeroInit));
   } else {
     CXXConstructExpr::ConstructionKind ConstructKind =
@@ -5916,7 +5917,9 @@ InitializationSequence::Perform(Sema &S,
                                                                    Entity,
                                                  Kind, Arg, *Step,
                                                ConstructorInitRequiresZeroInit,
-                                               /*IsListInitialization*/ true);
+                                               /*IsListInitialization*/ true,
+                                               InitList->getLBraceLoc(),
+                                               InitList->getRBraceLoc());
       break;
     }
 
@@ -5950,7 +5953,9 @@ InitializationSequence::Perform(Sema &S,
                                                                  : Entity,
                                                  Kind, Args, *Step,
                                                ConstructorInitRequiresZeroInit,
-                                               /*IsListInitialization*/ false);
+                                               /*IsListInitialization*/ false,
+                                               /*LBraceLoc*/ SourceLocation(),
+                                               /*RBraceLoc*/ SourceLocation());
       break;
     }
 
