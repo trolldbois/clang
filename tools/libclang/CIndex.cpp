@@ -3352,7 +3352,6 @@ CXString clang_getCursorSpelling(CXCursor C) {
   }
 
   if (C.kind == CXCursor_PackedAttr) {
-    //const PackedAttr *AA = cast<PackedAttr>(cxcursor::getCursorAttr(C));
     return cxstring::createRef("packed");
   }
 
