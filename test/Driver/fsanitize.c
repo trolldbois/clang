@@ -50,6 +50,12 @@
 // RUN: %clang -target x86_64-linux-gnu -fsanitize=memory,thread -pie -fno-rtti %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-SANM-SANT
 // CHECK-SANM-SANT: '-fsanitize=thread' not allowed with '-fsanitize=memory'
 
+// RUN: %clang -target x86_64-linux-gnu -fsanitize=leak,thread -pie -fno-rtti %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-SANL-SANT
+// CHECK-SANL-SANT: '-fsanitize=leak' not allowed with '-fsanitize=thread'
+
+// RUN: %clang -target x86_64-linux-gnu -fsanitize=leak,memory -pie -fno-rtti %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-SANL-SANM
+// CHECK-SANL-SANM: '-fsanitize=leak' not allowed with '-fsanitize=memory'
+
 // RUN: %clang -target x86_64-linux-gnu -faddress-sanitizer -fthread-sanitizer -fno-rtti %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-ASAN-TSAN
 // CHECK-ASAN-TSAN: '-faddress-sanitizer' not allowed with '-fthread-sanitizer'
 
@@ -114,6 +120,9 @@
 // CHECK-ANDROID-ASAN-NO-PIE: "-mrelocation-model" "pic" "-pic-level" "2" "-pie-level" "2"
 // CHECK-ANDROID-ASAN-NO-PIE: "-pie"
 
+// RUN: %clang -target arm-linux-androideabi %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-ANDROID-NO-ASAN
+// CHECK-ANDROID-NO-ASAN: "-mrelocation-model" "static"
+
 // RUN: %clang -target arm-linux-androideabi -fsanitize=address -fsanitize-address-zero-base-shadow %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-ANDROID-ASAN-ZERO-BASE
 // CHECK-ANDROID-ASAN-ZERO-BASE-NOT: argument unused during compilation
 
@@ -127,3 +136,16 @@
 // RUN: %clang -target x86_64-linux-gnu %s -fsanitize-recover -fno-sanitize-recover -### 2>&1 | FileCheck %s --check-prefix=CHECK-NO-RECOVER
 // CHECK-RECOVER-NOT: sanitize-recover
 // CHECK-NO-RECOVER: "-fno-sanitize-recover"
+
+// RUN: %clang -target x86_64-linux-gnu -fsanitize=leak %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-SANL
+// CHECK-SANL: "-fsanitize=leak"
+
+// RUN: %clang -target x86_64-linux-gnu -fsanitize=address,leak -fno-sanitize=address %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-SANA-SANL-NO-SANA
+// CHECK-SANA-SANL-NO-SANA: "-fsanitize=leak"
+
+// RUN: %clang -target x86_64-linux-gnu -fsanitize=memory %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-MSAN
+// CHECK-MSAN: "-fno-assume-sane-operator-new"
+
+// RUN: %clang -target x86_64-linux-gnu -fsanitize=zzz %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-DIAG1
+// CHECK-DIAG1: unsupported argument 'zzz' to option 'fsanitize='
+// CHECK-DIAG1-NOT: unsupported argument 'zzz' to option 'fsanitize='

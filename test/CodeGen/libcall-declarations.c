@@ -1,7 +1,12 @@
 // RUN: %clang_cc1 -triple x86_64-apple-darwin12 -S -o - -emit-llvm %s | FileCheck %s -check-prefix=CHECK-NOERRNO
 // RUN: %clang_cc1 -triple x86_64-linux-gnu -S -o - -emit-llvm -fmath-errno %s | FileCheck %s -check-prefix=CHECK-ERRNO
+// RUN: %clang_cc1 -triple x86_64-apple-darwin12 -S -o - -emit-llvm -x c++ %s | FileCheck %s -check-prefix=CHECK-NOERRNO
+// RUN: %clang_cc1 -triple x86_64-linux-gnu -S -o - -emit-llvm -x c++ -fmath-errno %s | FileCheck %s -check-prefix=CHECK-ERRNO
 
 // Prototypes.
+#ifdef __cplusplus
+extern "C" {
+#endif
 double acos(double);
 long double acosl(long double);
 float acosf(float);
@@ -50,6 +55,9 @@ float logf(float);
 double log2(double);
 long double log2l(long double);
 float log2f(float);
+long lrint(double);
+long lrintl(long double);
+long lrintf(float);
 double nearbyint(double);
 long double nearbyintl(long double);
 float nearbyintf(float);
@@ -74,17 +82,25 @@ float tanf(float);
 double trunc(double);
 long double truncl(long double);
 float truncf(float);
+#ifdef __cplusplus
+}
+#endif
 
 // Force emission of the declare statements.
-void *use[] = {
-  acos, acosl, acosf, asin, asinl, asinf, atan, atanl, atanf, atan2, atan2l,
-  atan2f, ceil, ceill, ceilf, copysign, copysignl, copysignf, cos, cosl, cosf,
-  exp, expl, expf, exp2, exp2l, exp2f, fabs, fabsl, fabsf, floor, floorl,
-  floorf, fma, fmal, fmaf, fmax, fmaxl, fmaxf, fmin, fminl, fminf, log, logl,
-  logf, log2, log2l, log2f, nearbyint, nearbyintl, nearbyintf, pow, powl, powf,
-  rint, rintl, rintf, round, roundl, roundf, sin, sinl, sinf, sqrt, sqrtl,
-  sqrtf, tan, tanl, tanf, trunc, truncl, truncf
-};
+#define F(x) ((void*)x)
+void *use[] = { F(acos), F(acosl), F(acosf), F(asin), F(asinl), F(asinf),
+                F(atan), F(atanl), F(atanf), F(atan2), F(atan2l), F(atan2f),
+                F(ceil), F(ceill), F(ceilf), F(copysign), F(copysignl),
+                F(copysignf), F(cos), F(cosl), F(cosf), F(exp), F(expl),
+                F(expf), F(exp2), F(exp2l), F(exp2f), F(fabs), F(fabsl),
+                F(fabsf), F(floor), F(floorl), F(floorf), F(fma), F(fmal),
+                F(fmaf), F(fmax), F(fmaxl), F(fmaxf), F(fmin), F(fminl),
+                F(fminf), F(log), F(logl), F(logf), F(log2), F(log2l),
+                F(log2f), F(lrint), F(lrintl), F(lrintf), F(nearbyint),
+                F(nearbyintl), F(nearbyintf), F(pow), F(powl), F(powf),
+                F(rint), F(rintl), F(rintf), F(round), F(roundl), F(roundf),
+                F(sin), F(sinl), F(sinf), F(sqrt), F(sqrtl), F(sqrtf), F(tan),
+                F(tanl), F(tanf), F(trunc), F(truncl), F(truncf) };
 
 // CHECK-NOERRNO: declare double @acos(double) [[NUW:#[0-9]+]]
 // CHECK-NOERRNO: declare x86_fp80 @acosl(x86_fp80) [[NUW]]
@@ -134,6 +150,9 @@ void *use[] = {
 // CHECK-NOERRNO: declare double @log2(double) [[NUW]]
 // CHECK-NOERRNO: declare x86_fp80 @log2l(x86_fp80) [[NUW]]
 // CHECK-NOERRNO: declare float @log2f(float) [[NUW]]
+// CHECK-NOERRNO: declare {{i..}} @lrint(double) [[NUW]]
+// CHECK-NOERRNO: declare {{i..}} @lrintl(x86_fp80) [[NUW]]
+// CHECK-NOERRNO: declare {{i..}} @lrintf(float) [[NUW]]
 // CHECK-NOERRNO: declare double @nearbyint(double) [[NUW]]
 // CHECK-NOERRNO: declare x86_fp80 @nearbyintl(x86_fp80) [[NUW]]
 // CHECK-NOERRNO: declare float @nearbyintf(float) [[NUW]]
@@ -177,6 +196,9 @@ void *use[] = {
 // CHECK-ERRNO: declare double @fmin(double, double) [[NUW]]
 // CHECK-ERRNO: declare x86_fp80 @fminl(x86_fp80, x86_fp80) [[NUW]]
 // CHECK-ERRNO: declare float @fminf(float, float) [[NUW]]
+// CHECK-ERRNO: declare {{i..}} @lrint(double) [[NUW]]
+// CHECK-ERRNO: declare {{i..}} @lrintl(x86_fp80) [[NUW]]
+// CHECK-ERRNO: declare {{i..}} @lrintf(float) [[NUW]]
 // CHECK-ERRNO: declare double @nearbyint(double) [[NUW]]
 // CHECK-ERRNO: declare x86_fp80 @nearbyintl(x86_fp80) [[NUW]]
 // CHECK-ERRNO: declare float @nearbyintf(float) [[NUW]]

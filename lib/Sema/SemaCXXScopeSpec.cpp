@@ -160,16 +160,6 @@ bool Sema::isDependentScopeSpecifier(const CXXScopeSpec &SS) {
   return SS.getScopeRep()->isDependent();
 }
 
-// \brief Determine whether this C++ scope specifier refers to an
-// unknown specialization, i.e., a dependent type that is not the
-// current instantiation.
-bool Sema::isUnknownSpecialization(const CXXScopeSpec &SS) {
-  if (!isDependentScopeSpecifier(SS))
-    return false;
-
-  return getCurrentInstantiationOf(SS.getScopeRep()) == 0;
-}
-
 /// \brief If the given nested name specifier refers to the current
 /// instantiation, return the declaration that corresponds to that
 /// current instantiation (C++0x [temp.dep.type]p1).
@@ -499,27 +489,23 @@ bool Sema::BuildCXXNestedNameSpecifier(Scope *S,
     // different kind of error, so look for typos.
     DeclarationName Name = Found.getLookupName();
     NestedNameSpecifierValidatorCCC Validator(*this);
-    TypoCorrection Corrected;
     Found.clear();
-    if ((Corrected = CorrectTypo(Found.getLookupNameInfo(),
-                                 Found.getLookupKind(), S, &SS, Validator,
-                                 LookupCtx, EnteringContext))) {
-      std::string CorrectedStr(Corrected.getAsString(getLangOpts()));
-      std::string CorrectedQuotedStr(Corrected.getQuoted(getLangOpts()));
-      if (LookupCtx)
-        Diag(Found.getNameLoc(), diag::err_no_member_suggest)
-          << Name << LookupCtx << CorrectedQuotedStr << SS.getRange()
-          << FixItHint::CreateReplacement(Corrected.getCorrectionRange(),
-                                          CorrectedStr);
-      else
-        Diag(Found.getNameLoc(), diag::err_undeclared_var_use_suggest)
-          << Name << CorrectedQuotedStr
-          << FixItHint::CreateReplacement(Found.getNameLoc(), CorrectedStr);
-      
-      if (NamedDecl *ND = Corrected.getCorrectionDecl()) {
-        Diag(ND->getLocation(), diag::note_previous_decl) << CorrectedQuotedStr;
+    if (TypoCorrection Corrected =
+            CorrectTypo(Found.getLookupNameInfo(), Found.getLookupKind(), S,
+                        &SS, Validator, LookupCtx, EnteringContext)) {
+      if (LookupCtx) {
+        bool DroppedSpecifier =
+            Corrected.WillReplaceSpecifier() &&
+            Name.getAsString() == Corrected.getAsString(getLangOpts());
+        diagnoseTypo(Corrected, PDiag(diag::err_no_member_suggest)
+                                  << Name << LookupCtx << DroppedSpecifier
+                                  << SS.getRange());
+      } else
+        diagnoseTypo(Corrected, PDiag(diag::err_undeclared_var_use_suggest)
+                                  << Name);
+
+      if (NamedDecl *ND = Corrected.getCorrectionDecl())
         Found.addDecl(ND);
-      }
       Found.setLookupName(Corrected.getCorrection());
     } else {
       Found.setLookupName(&Identifier);

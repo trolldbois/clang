@@ -201,14 +201,6 @@ public:
   // Binding and retrieving values to/from the environment and symbolic store.
   //==---------------------------------------------------------------------==//
 
-  /// \brief Create a new state with the specified CompoundLiteral binding.
-  /// \param CL the compound literal expression (the binding key)
-  /// \param LC the LocationContext of the binding
-  /// \param V the value to bind.
-  ProgramStateRef bindCompoundLiteral(const CompoundLiteralExpr *CL,
-                                      const LocationContext *LC,
-                                      SVal V) const;
-
   /// Create a new state by binding the value 'V' to the statement 'S' in the
   /// state's environment.
   ProgramStateRef BindExpr(const Stmt *S, const LocationContext *LCtx,
@@ -524,8 +516,8 @@ public:
 
 public:
 
-  SVal ArrayToPointer(Loc Array) {
-    return StoreMgr->ArrayToPointer(Array);
+  SVal ArrayToPointer(Loc Array, QualType ElementTy) {
+    return StoreMgr->ArrayToPointer(Array, ElementTy);
   }
 
   // Methods that manipulate the GDM.
@@ -806,7 +798,7 @@ CB ProgramState::scanReachableSymbols(const MemRegion * const *beg,
 /// A Utility class that allows to visit the reachable symbols using a custom
 /// SymbolVisitor.
 class ScanReachableSymbols {
-  typedef llvm::DenseMap<const void*, unsigned> VisitedItems;
+  typedef llvm::DenseSet<const void*> VisitedItems;
 
   VisitedItems visited;
   ProgramStateRef state;
@@ -816,6 +808,7 @@ public:
   ScanReachableSymbols(ProgramStateRef st, SymbolVisitor& v)
     : state(st), visitor(v) {}
 
+  bool scan(nonloc::LazyCompoundVal val);
   bool scan(nonloc::CompoundVal val);
   bool scan(SVal val);
   bool scan(const MemRegion *R);

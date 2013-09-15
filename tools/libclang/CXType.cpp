@@ -85,6 +85,9 @@ static CXTypeKind GetTypeKind(QualType T) {
     TKCASE(FunctionNoProto);
     TKCASE(FunctionProto);
     TKCASE(ConstantArray);
+    TKCASE(IncompleteArray);
+    TKCASE(VariableArray);
+    TKCASE(DependentSizedArray);
     TKCASE(Vector);
     default:
       return CXType_Unexposed;
@@ -466,6 +469,9 @@ CXString clang_getTypeKindSpelling(enum CXTypeKind K) {
     TKIND(FunctionNoProto);
     TKIND(FunctionProto);
     TKIND(ConstantArray);
+    TKIND(IncompleteArray);
+    TKIND(VariableArray);
+    TKIND(DependentSizedArray);
     TKIND(Vector);
   }
 #undef TKIND
@@ -498,12 +504,13 @@ CXCallingConv clang_getFunctionTypeCallingConv(CXType X) {
   if (const FunctionType *FD = T->getAs<FunctionType>()) {
 #define TCALLINGCONV(X) case CC_##X: return CXCallingConv_##X
     switch (FD->getCallConv()) {
-      TCALLINGCONV(Default);
       TCALLINGCONV(C);
       TCALLINGCONV(X86StdCall);
       TCALLINGCONV(X86FastCall);
       TCALLINGCONV(X86ThisCall);
       TCALLINGCONV(X86Pascal);
+      TCALLINGCONV(X86_64Win64);
+      TCALLINGCONV(X86_64SysV);
       TCALLINGCONV(AAPCS);
       TCALLINGCONV(AAPCS_VFP);
       TCALLINGCONV(PnaclCall);
@@ -590,6 +597,15 @@ CXType clang_getElementType(CXType CT) {
     case Type::ConstantArray:
       ET = cast<ConstantArrayType> (TP)->getElementType();
       break;
+    case Type::IncompleteArray:
+      ET = cast<IncompleteArrayType> (TP)->getElementType();
+      break;
+    case Type::VariableArray:
+      ET = cast<VariableArrayType> (TP)->getElementType();
+      break;
+    case Type::DependentSizedArray:
+      ET = cast<DependentSizedArrayType> (TP)->getElementType();
+      break;
     case Type::Vector:
       ET = cast<VectorType> (TP)->getElementType();
       break;
@@ -632,6 +648,15 @@ CXType clang_getArrayElementType(CXType CT) {
     switch (TP->getTypeClass()) {
     case Type::ConstantArray:
       ET = cast<ConstantArrayType> (TP)->getElementType();
+      break;
+    case Type::IncompleteArray:
+      ET = cast<IncompleteArrayType> (TP)->getElementType();
+      break;
+    case Type::VariableArray:
+      ET = cast<VariableArrayType> (TP)->getElementType();
+      break;
+    case Type::DependentSizedArray:
+      ET = cast<DependentSizedArrayType> (TP)->getElementType();
       break;
     default:
       break;
@@ -733,11 +758,13 @@ long long clang_Type_getOffsetOf(CXType PT, const char *S) {
     return CXTypeLayoutError_Invalid;
   const RecordDecl *RD =
         dyn_cast_or_null<RecordDecl>(cxcursor::getCursorDecl(PC));
-  if (!RD)
+  if (!RD || RD->isInvalidDecl())
     return CXTypeLayoutError_Invalid;
   RD = RD->getDefinition();
   if (!RD)
     return CXTypeLayoutError_Incomplete;
+  if (RD->isInvalidDecl())
+    return CXTypeLayoutError_Invalid;
   QualType RT = GetQualType(PT);
   if (RT->isIncompleteType())
     return CXTypeLayoutError_Incomplete;

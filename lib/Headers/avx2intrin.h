@@ -25,6 +25,9 @@
 #error "Never use <avx2intrin.h> directly; include <immintrin.h> instead."
 #endif
 
+#ifndef __AVX2INTRIN_H
+#define __AVX2INTRIN_H
+
 /* SSE4 Multiple Packed Sums of Absolute Difference.  */
 #define _mm256_mpsadbw_epu8(X, Y, M) __builtin_ia32_mpsadbw256((X), (Y), (M))
 
@@ -750,9 +753,9 @@ _mm256_broadcastsd_pd(__m128d __X)
 }
 
 static __inline__ __m256i __attribute__((__always_inline__, __nodebug__))
-_mm_broadcastsi128_si256(__m128i const *__a)
+_mm256_broadcastsi128_si256(__m128i __X)
 {
-  return (__m256i)__builtin_ia32_vbroadcastsi256(__a);
+  return (__m256i)__builtin_ia32_vbroadcastsi256(__X);
 }
 
 #define _mm_blend_epi32(V1, V2, M) __extension__ ({ \
@@ -1199,3 +1202,5 @@ _mm_srlv_epi64(__m128i __X, __m128i __Y)
   (__m256i)__builtin_ia32_gatherq_q256((__v4di)_mm256_setzero_si256(), \
              (const __v4di *)__m, (__v4di)__i, \
              (__v4di)_mm256_set1_epi64x(-1), (s)); })
+
+#endif /* __AVX2INTRIN_H */
