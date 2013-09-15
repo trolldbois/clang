@@ -3127,7 +3127,7 @@ functionList = [
 
   ("clang_Type_getSizeOf",
    [Type],
-   c_ulonglong),
+   c_longlong),
 ]
 
 class LibclangError(Exception):
