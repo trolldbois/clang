@@ -2172,7 +2172,7 @@ void X86TargetInfo::setSSELevel(llvm::StringMap<bool> &Features,
   case SSE42:
     Features["sse4.2"] = false;
   case AVX:
-    Features["fma"] = Features["avx"] = false;
+    Features["fma"] = Features["avx"] = Features["f16c"] = false;
     setXOPLevel(Features, FMA4, false);
   case AVX2:
     Features["avx2"] = false;
@@ -2290,6 +2290,9 @@ void X86TargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
     setXOPLevel(Features, XOP, Enabled);
   } else if (Name == "sse4a") {
     setXOPLevel(Features, SSE4A, Enabled);
+  } else if (Name == "f16c") {
+    if (Enabled)
+      setSSELevel(Features, AVX, Enabled);
   }
 }
 
@@ -3708,9 +3711,7 @@ public:
         .Case("arm", true)
         .Case("softfloat", SoftFloat)
         .Case("thumb", IsThumb)
-        .Case("neon", (FPU & NeonFPU) && !SoftFloat &&
-              (StringRef(getCPUDefineSuffix(CPU)).startswith("7") ||
-               StringRef(getCPUDefineSuffix(CPU)).startswith("8")))
+        .Case("neon", (FPU & NeonFPU) && !SoftFloat)
         .Default(false);
   }
   // FIXME: Should we actually have some table instead of these switches?
