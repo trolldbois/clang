@@ -340,9 +340,14 @@ static bool rewriteToObjCProperty(const ObjCMethodDecl *Getter,
 
 void ObjCMigrateASTConsumer::migrateObjCInterfaceDecl(ASTContext &Ctx,
                                                       ObjCContainerDecl *D) {
+  if (D->isDeprecated())
+    return;
+  
   for (ObjCContainerDecl::method_iterator M = D->meth_begin(), MEnd = D->meth_end();
        M != MEnd; ++M) {
     ObjCMethodDecl *Method = (*M);
+    if (Method->isDeprecated())
+      continue;
     if (!migrateProperty(Ctx, D, Method))
       migrateNsReturnsInnerPointer(Ctx, Method);
   }
@@ -503,7 +508,7 @@ static bool UseNSOptionsMacro(Preprocessor &PP, ASTContext &Ctx,
       PowerOfTwo = false;
       continue;
     }
-    InitExpr = InitExpr->IgnoreImpCasts();
+    InitExpr = InitExpr->IgnoreParenCasts();
     if (const BinaryOperator *BO = dyn_cast<BinaryOperator>(InitExpr))
       if (BO->isShiftOp() || BO->isBitwiseOp())
         return true;
@@ -532,7 +537,7 @@ static bool UseNSOptionsMacro(Preprocessor &PP, ASTContext &Ctx,
 void ObjCMigrateASTConsumer::migrateProtocolConformance(ASTContext &Ctx,   
                                             const ObjCImplementationDecl *ImpDecl) {
   const ObjCInterfaceDecl *IDecl = ImpDecl->getClassInterface();
-  if (!IDecl || ObjCProtocolDecls.empty())
+  if (!IDecl || ObjCProtocolDecls.empty() || IDecl->isDeprecated())
     return;
   // Find all implicit conforming protocols for this class
   // and make them explicit.
@@ -590,7 +595,8 @@ void ObjCMigrateASTConsumer::migrateNSEnumDecl(ASTContext &Ctx,
                                            const EnumDecl *EnumDcl,
                                            const TypedefDecl *TypedefDcl) {
   if (!EnumDcl->isCompleteDefinition() || EnumDcl->getIdentifier() ||
-      !TypedefDcl->getIdentifier())
+      !TypedefDcl->getIdentifier() ||
+      EnumDcl->isDeprecated() || TypedefDcl->isDeprecated())
     return;
   
   QualType qt = TypedefDcl->getTypeSourceInfo()->getType();
@@ -715,6 +721,33 @@ static bool TypeIsInnerPointer(QualType T) {
   return true;
 }
 
+static bool AttributesMatch(const Decl *Decl1, const Decl *Decl2) {
+  if (Decl1->hasAttrs() != Decl2->hasAttrs())
+    return false;
+  
+  if (!Decl1->hasAttrs())
+    return true;
+  
+  const AttrVec &Attrs1 = Decl1->getAttrs();
+  const AttrVec &Attrs2 = Decl2->getAttrs();
+  // This list is very small, so this need not be optimized.
+  for (unsigned i = 0, e = Attrs1.size(); i != e; i++) {
+    bool match = false;
+    for (unsigned j = 0, f = Attrs2.size(); j != f; j++) {
+      // Matching attribute kind only. We are not getting into
+      // details of the attributes. For all practical purposes
+      // this is sufficient.
+      if (Attrs1[i]->getKind() == Attrs2[j]->getKind()) {
+        match = true;
+        break;
+      }
+    }
+    if (!match)
+      return false;
+  }
+  return true;
+}
+
 bool ObjCMigrateASTConsumer::migrateProperty(ASTContext &Ctx,
                              ObjCContainerDecl *D,
                              ObjCMethodDecl *Method) {
@@ -724,9 +757,6 @@ bool ObjCMigrateASTConsumer::migrateProperty(ASTContext &Ctx,
   // Is this method candidate to be a getter?
   QualType GRT = Method->getResultType();
   if (GRT->isVoidType())
-    return false;
-  // FIXME. Don't know what todo with attributes, skip for now.
-  if (Method->hasAttrs())
     return false;
   
   Selector GetterSelector = Method->getSelector();
@@ -764,14 +794,17 @@ bool ObjCMigrateASTConsumer::migrateProperty(ASTContext &Ctx,
   }
   
   if (SetterMethod) {
+    if (SetterMethod->isDeprecated() ||
+        !AttributesMatch(Method, SetterMethod))
+      return false;
+    
     // Is this a valid setter, matching the target getter?
     QualType SRT = SetterMethod->getResultType();
     if (!SRT->isVoidType())
       return false;
     const ParmVarDecl *argDecl = *SetterMethod->param_begin();
     QualType ArgType = argDecl->getType();
-    if (!Ctx.hasSameUnqualifiedType(ArgType, GRT) ||
-        SetterMethod->hasAttrs())
+    if (!Ctx.hasSameUnqualifiedType(ArgType, GRT))
       return false;
     edit::Commit commit(*Editor);
     rewriteToObjCProperty(Method, SetterMethod, *NSAPIObj, commit,
@@ -808,11 +841,16 @@ void ObjCMigrateASTConsumer::migrateNsReturnsInnerPointer(ASTContext &Ctx,
 
 void ObjCMigrateASTConsumer::migrateMethods(ASTContext &Ctx,
                                                  ObjCContainerDecl *CDecl) {
+  if (CDecl->isDeprecated())
+    return;
+  
   // migrate methods which can have instancetype as their result type.
   for (ObjCContainerDecl::method_iterator M = CDecl->meth_begin(),
        MEnd = CDecl->meth_end();
        M != MEnd; ++M) {
     ObjCMethodDecl *Method = (*M);
+    if (Method->isDeprecated())
+      continue;
     migrateMethodInstanceType(Ctx, CDecl, Method);
   }
 }
@@ -944,6 +982,9 @@ void ObjCMigrateASTConsumer::AnnotateImplicitBridging(ASTContext &Ctx) {
 }
 
 void ObjCMigrateASTConsumer::migrateCFAnnotation(ASTContext &Ctx, const Decl *Decl) {
+  if (Decl->isDeprecated())
+    return;
+  
   if (Decl->hasAttr<CFAuditedTransferAttr>()) {
     assert(CFFunctionIBCandidates.empty() &&
            "Cannot have audited functions/methods inside user "
@@ -1084,7 +1125,7 @@ ObjCMigrateASTConsumer::CF_BRIDGING_KIND
 
 void ObjCMigrateASTConsumer::migrateARCSafeAnnotation(ASTContext &Ctx,
                                                  ObjCContainerDecl *CDecl) {
-  if (!isa<ObjCInterfaceDecl>(CDecl))
+  if (!isa<ObjCInterfaceDecl>(CDecl) || CDecl->isDeprecated())
     return;
   
   // migrate methods which can have instancetype as their result type.
@@ -1234,10 +1275,8 @@ void ObjCMigrateASTConsumer::HandleTranslationUnit(ASTContext &Ctx) {
          D != DEnd; ++D) {
       if (unsigned FID =
             PP.getSourceManager().getFileID((*D)->getLocation()).getHashValue())
-        if (FileId && FileId != FID) {
-          assert(!CFFunctionIBCandidates.empty());
+        if (FileId && FileId != FID)
           AnnotateImplicitBridging(Ctx);
-        }
           
       if (ObjCInterfaceDecl *CDecl = dyn_cast<ObjCInterfaceDecl>(*D))
         migrateObjCInterfaceDecl(Ctx, CDecl);

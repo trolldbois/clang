@@ -3289,6 +3289,8 @@ def err_explicit_instantiation_constexpr : Error<
 def ext_explicit_instantiation_without_qualified_id : Extension<
   "qualifier in explicit instantiation of %q0 requires a template-id "
   "(a typedef is not permitted)">;
+def err_explicit_instantiation_without_template_id : Error<
+  "explicit instantiation of %q0 must specify a template argument list">;
 def err_explicit_instantiation_unqualified_wrong_namespace : Error<
   "explicit instantiation of %q0 must occur in namespace %1">;
 def warn_explicit_instantiation_unqualified_wrong_namespace_0x : Warning<
@@ -6371,6 +6373,13 @@ def err_shufflevector_nonconstant_argument : Error<
 def err_shufflevector_argument_too_large : Error<
   "index for __builtin_shufflevector must be less than the total number "
   "of vector elements">;
+
+def err_convertvector_non_vector : Error<
+  "first argument to __builtin_convertvector must be a vector">;
+def err_convertvector_non_vector_type : Error<
+  "second argument to __builtin_convertvector must be a vector type">;
+def err_convertvector_incompatible_vector : Error<
+  "first two arguments to __builtin_convertvector must have the same number of elements">;
 
 def err_vector_incorrect_num_initializers : Error<
   "%select{too many|too few}0 elements in vector initialization (expected %1 elements, have %2)">;
