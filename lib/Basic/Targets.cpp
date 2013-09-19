@@ -1589,6 +1589,7 @@ class X86TargetInfo : public TargetInfo {
   bool HasFMA;
   bool HasF16C;
   bool HasAVX512CD, HasAVX512ER, HasAVX512PF;
+  bool HasSHA;
 
   /// \brief Enumeration of all of the X86 CPUs supported by Clang.
   ///
@@ -1749,7 +1750,7 @@ public:
         HasRDRND(false), HasBMI(false), HasBMI2(false), HasPOPCNT(false),
         HasRTM(false), HasPRFCHW(false), HasRDSEED(false), HasFMA(false),
         HasF16C(false), HasAVX512CD(false), HasAVX512ER(false),
-        HasAVX512PF(false), CPU(CK_Generic), FPMath(FP_Default) {
+        HasAVX512PF(false), HasSHA(false), CPU(CK_Generic), FPMath(FP_Default) {
     BigEndian = false;
     LongDoubleFormat = &llvm::APFloat::x87DoubleExtended;
   }
@@ -2166,7 +2167,8 @@ void X86TargetInfo::setSSELevel(llvm::StringMap<bool> &Features,
   case SSE1:
     Features["sse"] = false;
   case SSE2:
-    Features["sse2"] = false;
+    Features["sse2"] = Features["pclmul"] = Features["aes"] =
+      Features["sha"] = false;
   case SSE3:
     Features["sse3"] = false;
     setXOPLevel(Features, NoXOP, false);
@@ -2252,37 +2254,37 @@ void X86TargetInfo::setFeatureEnabledImpl(llvm::StringMap<bool> &Features,
 
   Features[Name] = Enabled;
 
-  if (Name == "mmx")
+  if (Name == "mmx") {
     setMMXLevel(Features, MMX, Enabled);
-  else if (Name == "sse")
+  } else if (Name == "sse") {
     setSSELevel(Features, SSE1, Enabled);
-  else if (Name == "sse2")
+  } else if (Name == "sse2") {
     setSSELevel(Features, SSE2, Enabled);
-  else if (Name == "sse3")
+  } else if (Name == "sse3") {
     setSSELevel(Features, SSE3, Enabled);
-  else if (Name == "ssse3")
+  } else if (Name == "ssse3") {
     setSSELevel(Features, SSSE3, Enabled);
-  else if (Name == "sse4.2")
+  } else if (Name == "sse4.2") {
     setSSELevel(Features, SSE42, Enabled);
-  else if (Name == "sse4.1")
+  } else if (Name == "sse4.1") {
     setSSELevel(Features, SSE41, Enabled);
-  else if (Name == "3dnow")
+  } else if (Name == "3dnow") {
     setMMXLevel(Features, AMD3DNow, Enabled);
-  else if (Name == "3dnowa")
+  } else if (Name == "3dnowa") {
     setMMXLevel(Features, AMD3DNowAthlon, Enabled);
-  else if (Name == "aes") {
+  } else if (Name == "aes") {
     if (Enabled)
       setSSELevel(Features, SSE2, Enabled);
   } else if (Name == "pclmul") {
     if (Enabled)
       setSSELevel(Features, SSE2, Enabled);
-  } else if (Name == "avx")
+  } else if (Name == "avx") {
     setSSELevel(Features, AVX, Enabled);
-  else if (Name == "avx2")
+  } else if (Name == "avx2") {
     setSSELevel(Features, AVX2, Enabled);
-  else if (Name == "avx512f")
+  } else if (Name == "avx512f") {
     setSSELevel(Features, AVX512F, Enabled);
-  else if (Name == "avx512cd" || Name == "avx512er" || Name == "avx512pf") {
+  } else if (Name == "avx512cd" || Name == "avx512er" || Name == "avx512pf") {
     if (Enabled)
       setSSELevel(Features, AVX512F, Enabled);
   } else if (Name == "fma") {
@@ -2297,6 +2299,9 @@ void X86TargetInfo::setFeatureEnabledImpl(llvm::StringMap<bool> &Features,
   } else if (Name == "f16c") {
     if (Enabled)
       setSSELevel(Features, AVX, Enabled);
+  } else if (Name == "sha") {
+    if (Enabled)
+      setSSELevel(Features, SSE2, Enabled);
   }
 }
 
@@ -2384,6 +2389,11 @@ bool X86TargetInfo::HandleTargetFeatures(std::vector<std::string> &Features,
 
     if (Feature == "avx512pf") {
       HasAVX512PF = true;
+      continue;
+    }
+
+    if (Feature == "sha") {
+      HasSHA = true;
       continue;
     }
 
@@ -2656,6 +2666,9 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   if (HasAVX512PF)
     Builder.defineMacro("__AVX512PF__");
 
+  if (HasSHA)
+    Builder.defineMacro("__SHA__");
+
   // Each case falls through to the previous one here.
   switch (SSELevel) {
   case AVX512F:
@@ -2746,6 +2759,7 @@ bool X86TargetInfo::hasFeature(StringRef Feature) const {
       .Case("rtm", HasRTM)
       .Case("prfchw", HasPRFCHW)
       .Case("rdseed", HasRDSEED)
+      .Case("sha", HasSHA)
       .Case("sse", SSELevel >= SSE1)
       .Case("sse2", SSELevel >= SSE2)
       .Case("sse3", SSELevel >= SSE3)
