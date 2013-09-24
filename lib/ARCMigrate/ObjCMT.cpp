@@ -304,7 +304,9 @@ static bool rewriteToObjCProperty(const ObjCMethodDecl *Getter,
   }
   PropertyString += " ";
   PropertyString += RT.getAsString(Context.getPrintingPolicy());
-  PropertyString += " ";
+  char LastChar = PropertyString[PropertyString.size()-1];
+  if (LastChar != '*')
+    PropertyString += " ";
   if (LengthOfPrefix > 0) {
     // property name must strip off "is" and lower case the first character
     // after that; e.g. isContinuous will become continuous.
@@ -498,7 +500,7 @@ static bool rewriteToNSMacroDecl(const EnumDecl *EnumDcl,
 static bool UseNSOptionsMacro(Preprocessor &PP, ASTContext &Ctx,
                               const EnumDecl *EnumDcl) {
   bool PowerOfTwo = true;
-  bool FoundHexdecimalEnumerator = false;
+  bool AllHexdecimalEnumerator = true;
   uint64_t MaxPowerOfTwoVal = 0;
   for (EnumDecl::enumerator_iterator EI = EnumDcl->enumerator_begin(),
        EE = EnumDcl->enumerator_end(); EI != EE; ++EI) {
@@ -506,6 +508,7 @@ static bool UseNSOptionsMacro(Preprocessor &PP, ASTContext &Ctx,
     const Expr *InitExpr = Enumerator->getInitExpr();
     if (!InitExpr) {
       PowerOfTwo = false;
+      AllHexdecimalEnumerator = false;
       continue;
     }
     InitExpr = InitExpr->IgnoreParenCasts();
@@ -520,7 +523,8 @@ static bool UseNSOptionsMacro(Preprocessor &PP, ASTContext &Ctx,
       else if (EnumVal > MaxPowerOfTwoVal)
         MaxPowerOfTwoVal = EnumVal;
     }
-    if (!FoundHexdecimalEnumerator) {
+    if (AllHexdecimalEnumerator && EnumVal) {
+      bool FoundHexdecimalEnumerator = false;
       SourceLocation EndLoc = Enumerator->getLocEnd();
       Token Tok;
       if (!PP.getRawToken(EndLoc, Tok, /*IgnoreWhiteSpace=*/true))
@@ -529,9 +533,11 @@ static bool UseNSOptionsMacro(Preprocessor &PP, ASTContext &Ctx,
             FoundHexdecimalEnumerator =
               (StringLit[0] == '0' && (toLowercase(StringLit[1]) == 'x'));
         }
+      if (!FoundHexdecimalEnumerator)
+        AllHexdecimalEnumerator = false;
     }
   }
-  return FoundHexdecimalEnumerator || (PowerOfTwo && (MaxPowerOfTwoVal > 2));
+  return AllHexdecimalEnumerator || (PowerOfTwo && (MaxPowerOfTwoVal > 2));
 }
 
 void ObjCMigrateASTConsumer::migrateProtocolConformance(ASTContext &Ctx,   
