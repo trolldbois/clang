@@ -53,6 +53,7 @@ class ObjCMigrateASTConsumer : public ASTConsumer {
                                  ObjCMethodDecl *OM);
   bool migrateProperty(ASTContext &Ctx, ObjCContainerDecl *D, ObjCMethodDecl *OM);
   void migrateNsReturnsInnerPointer(ASTContext &Ctx, ObjCMethodDecl *OM);
+  void migratePropertyNsReturnsInnerPointer(ASTContext &Ctx, ObjCPropertyDecl *P);
   void migrateFactoryMethod(ASTContext &Ctx, ObjCContainerDecl *CDecl,
                             ObjCMethodDecl *OM,
                             ObjCInstanceTypeFamily OIT_Family = OIT_None);
@@ -251,7 +252,7 @@ static bool rewriteToObjCProperty(const ObjCMethodDecl *Getter,
                                   const NSAPI &NS, edit::Commit &commit,
                                   unsigned LengthOfPrefix) {
   ASTContext &Context = NS.getASTContext();
-  std::string PropertyString = "@property(nonatomic";
+  std::string PropertyString = "@property (nonatomic";
   std::string PropertyNameString = Getter->getNameAsString();
   StringRef PropertyName(PropertyNameString);
   if (LengthOfPrefix > 0) {
@@ -350,8 +351,14 @@ void ObjCMigrateASTConsumer::migrateObjCInterfaceDecl(ASTContext &Ctx,
     ObjCMethodDecl *Method = (*M);
     if (Method->isDeprecated())
       continue;
-    if (!migrateProperty(Ctx, D, Method))
-      migrateNsReturnsInnerPointer(Ctx, Method);
+    migrateProperty(Ctx, D, Method);
+    migrateNsReturnsInnerPointer(Ctx, Method);
+  }
+  for (ObjCContainerDecl::prop_iterator P = D->prop_begin(),
+       E = D->prop_end(); P != E; ++P) {
+    ObjCPropertyDecl *Prop = *P;
+    if (!P->isDeprecated())
+      migratePropertyNsReturnsInnerPointer(Ctx, Prop);
   }
 }
 
@@ -765,6 +772,12 @@ bool ObjCMigrateASTConsumer::migrateProperty(ASTContext &Ctx,
     return false;
   
   Selector GetterSelector = Method->getSelector();
+  ObjCInstanceTypeFamily OIT_Family =
+    Selector::getInstTypeMethodFamily(GetterSelector);
+  
+  if (OIT_Family != OIT_None)
+    return false;
+  
   IdentifierInfo *getterName = GetterSelector.getIdentifierInfoForSlot(0);
   Selector SetterSelector =
   SelectorTable::constructSetterSelector(PP.getIdentifierTable(),
@@ -831,7 +844,8 @@ bool ObjCMigrateASTConsumer::migrateProperty(ASTContext &Ctx,
 
 void ObjCMigrateASTConsumer::migrateNsReturnsInnerPointer(ASTContext &Ctx,
                                                           ObjCMethodDecl *OM) {
-  if (OM->hasAttr<ObjCReturnsInnerPointerAttr>())
+  if (OM->isImplicit() ||
+      OM->hasAttr<ObjCReturnsInnerPointerAttr>())
     return;
   
   QualType RT = OM->getResultType();
@@ -841,6 +855,18 @@ void ObjCMigrateASTConsumer::migrateNsReturnsInnerPointer(ASTContext &Ctx,
   
   edit::Commit commit(*Editor);
   commit.insertBefore(OM->getLocEnd(), " NS_RETURNS_INNER_POINTER");
+  Editor->commit(commit);
+}
+
+void ObjCMigrateASTConsumer::migratePropertyNsReturnsInnerPointer(ASTContext &Ctx,
+                                                                  ObjCPropertyDecl *P) {
+  QualType T = P->getType();
+  
+  if (!TypeIsInnerPointer(T) ||
+      !Ctx.Idents.get("NS_RETURNS_INNER_POINTER").hasMacroDefinition())
+    return;
+  edit::Commit commit(*Editor);
+  commit.insertBefore(P->getLocEnd(), " NS_RETURNS_INNER_POINTER ");
   Editor->commit(commit);
 }
 
