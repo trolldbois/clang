@@ -360,8 +360,6 @@ def fbounds_checking : Flag<["-"], "fbounds-checking">, Group<f_Group>,
   HelpText<"Enable run-time bounds checks">;
 def fbounds_checking_EQ : Joined<["-"], "fbounds-checking=">, Flags<[CC1Option]>,
   Group<f_Group>;
-def fbuiltin_strcat : Flag<["-"], "fbuiltin-strcat">, Group<f_Group>;
-def fbuiltin_strcpy : Flag<["-"], "fbuiltin-strcpy">, Group<f_Group>;
 def fbuiltin : Flag<["-"], "fbuiltin">, Group<f_Group>;
 def fcaret_diagnostics : Flag<["-"], "fcaret-diagnostics">, Group<f_Group>;
 def fcatch_undefined_behavior : Flag<["-"], "fcatch-undefined-behavior">, Group<f_Group>;
@@ -580,10 +578,10 @@ def fno_assume_sane_operator_new : Flag<["-"], "fno-assume-sane-operator-new">, 
   Flags<[CC1Option]>;
 def fno_blocks : Flag<["-"], "fno-blocks">, Group<f_Group>;
 def fno_borland_extensions : Flag<["-"], "fno-borland-extensions">, Group<f_Group>;
-def fno_builtin_strcat : Flag<["-"], "fno-builtin-strcat">, Group<f_Group>;
-def fno_builtin_strcpy : Flag<["-"], "fno-builtin-strcpy">, Group<f_Group>;
 def fno_builtin : Flag<["-"], "fno-builtin">, Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Disable implicit builtin knowledge of functions">;
+def fno_builtin_ : Joined<["-"], "fno-builtin-">, Group<clang_ignored_f_Group>,
+  HelpText<"Disable implicit builtin knowledge of a specific function">;
 def fno_math_builtin : Flag<["-"], "fno-math-builtin">, Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Disable implicit builtin knowledge of math functions">;
 def fno_caret_diagnostics : Flag<["-"], "fno-caret-diagnostics">, Group<f_Group>,
@@ -802,6 +800,8 @@ def funwind_tables : Flag<["-"], "funwind-tables">, Group<f_Group>;
 def fuse_cxa_atexit : Flag<["-"], "fuse-cxa-atexit">, Group<f_Group>;
 def fuse_init_array : Flag<["-"], "fuse-init-array">, Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Use .init_array instead of .ctors">;
+def fno_var_tracking : Flag<["-"], "fno-var-tracking">,
+  Group<clang_ignored_f_Group>;
 def fverbose_asm : Flag<["-"], "fverbose-asm">, Group<f_Group>;
 def fvisibility_EQ : Joined<["-"], "fvisibility=">, Group<f_Group>,
   HelpText<"Set the default symbol visibility for all global declarations">;
@@ -1363,6 +1363,37 @@ def Z_reserved_lib_stdcxx : Flag<["-"], "Z-reserved-lib-stdc++">,
     Flags<[LinkerInput, NoArgumentUnused, Unsupported]>, Group<reserved_lib_Group>;
 def Z_reserved_lib_cckext : Flag<["-"], "Z-reserved-lib-cckext">,
     Flags<[LinkerInput, NoArgumentUnused, Unsupported]>, Group<reserved_lib_Group>;
+
+// Ignored options
+// FIXME: multiclasess produce suffixes, not prefixes. This is fine for now
+// since it is only used in ignored options.
+multiclass BooleanFFlag<string name> {
+  def _f : Flag<["-"], "f"#name>;
+  def _fno : Flag<["-"], "fno-"#name>;
+}
+
+def fprofile_dir : Joined<["-"], "fprofile-dir=">, Group<clang_ignored_f_Group>;
+
+defm profile_use : BooleanFFlag<"profile-use">, Group<clang_ignored_f_Group>;
+def fprofile_use_eq : Joined<["-"], "fprofile-use=">, Group<clang_ignored_f_Group>;
+
+defm falign_functions : BooleanFFlag<"align-functions">, Group<clang_ignored_f_Group>;
+def falign_functions_eq : Joined<["-"], "falign-functions=">, Group<clang_ignored_f_Group>;
+
+defm tracer : BooleanFFlag<"tracer">, Group<clang_ignored_f_Group>;
+defm unroll_all_loops : BooleanFFlag<"unroll-all-loops">, Group<clang_ignored_f_Group>;
+defm sse : BooleanFFlag<"see">, Group<clang_ignored_f_Group>;
+defm rounding_math : BooleanFFlag<"rounding-math">, Group<clang_ignored_f_Group>;
+defm profile_values : BooleanFFlag<"profile-values">, Group<clang_ignored_f_Group>;
+defm profile_correction : BooleanFFlag<"profile-correction">, Group<clang_ignored_f_Group>;
+defm prefetch_loop_arrays : BooleanFFlag<"prefetch-loop-arrays">, Group<clang_ignored_f_Group>;
+defm permissive : BooleanFFlag<"permissive">, Group<clang_ignored_f_Group>;
+defm non_call_exceptions : BooleanFFlag<"non-call-exceptions">, Group<clang_ignored_f_Group>;
+defm ivopts : BooleanFFlag<"ivopts">, Group<clang_ignored_f_Group>;
+defm ident : BooleanFFlag<"ident">, Group<clang_ignored_f_Group>;
+defm gcse : BooleanFFlag<"gcse">, Group<clang_ignored_f_Group>;
+defm eliminate_unused_debug_types : BooleanFFlag<"eliminate-unused-debug-types">, Group<clang_ignored_f_Group>;
+defm float_store : BooleanFFlag<"float-store">, Group<clang_ignored_f_Group>;
 
 include "CC1Options.td"
 
