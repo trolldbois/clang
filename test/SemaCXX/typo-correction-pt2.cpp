@@ -5,6 +5,37 @@
 // attempt within a single file (which is to avoid having very broken files take
 // minutes to finally be rejected by the parser).
 
+namespace bogus_keyword_suggestion {
+void test() {
+   status = "OK";  // expected-error-re {{use of undeclared identifier 'status'$}}
+   return status;  // expected-error-re {{use of undeclared identifier 'status'$}}
+ }
+}
+
+namespace PR13387 {
+struct A {
+  void CreateFoo(float, float);
+  void CreateBar(float, float);
+};
+struct B : A {
+  using A::CreateFoo;
+  void CreateFoo(int, int);
+};
+void f(B &x) {
+  x.Createfoo(0,0);  // expected-error {{no member named 'Createfoo' in 'PR13387::B'; did you mean 'CreateFoo'?}}
+}
+}
+
+struct DataStruct {void foo();};
+struct T {
+ DataStruct data_struct;
+ void f();
+};
+// should be void T::f();
+void f() {
+ data_struct->foo();  // expected-error-re{{use of undeclared identifier 'data_struct'$}}
+}
+
 namespace PR12287 {
 class zif {
   void nab(int);
@@ -47,9 +78,7 @@ public:
 };
 
 Inner Outer::MyMethod(Inner arg) {  // expected-error {{unknown type name 'Inner'; did you mean 'Outer::Inner'?}}
-  // TODO: Recovery needs to be fixed/added for the typo-correction of the
-  // return type so the below error isn't still generated.
-  return Inner();  // expected-error {{no viable conversion from 'class_member_typo_corrections::Outer::Inner' to 'int'}}
+  return Inner();
 }
 
 class Result {
@@ -93,4 +122,9 @@ void testAccess() {
     break;
   }
 }
+}
+
+long readline(const char *, char *, unsigned long);
+void assign_to_unknown_var() {
+    deadline_ = 1;  // expected-error-re {{use of undeclared identifier 'deadline_'$}}
 }
