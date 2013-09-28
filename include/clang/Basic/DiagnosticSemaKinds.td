@@ -5069,12 +5069,17 @@ let CategoryName = "Lambda Issue" in {
     "here">;
 
   // C++1y lambda init-captures.
+  def warn_cxx11_compat_init_capture : Warning<
+    "initialized lambda captures are incompatible with C++ standards "
+    "before C++1y">, InGroup<CXXPre1yCompat>, DefaultIgnore;
+  def ext_init_capture : ExtWarn<
+    "initialized lambda captures are a C++1y extension">, InGroup<CXX1y>;
   def err_init_capture_no_expression : Error<
     "initializer missing for lambda capture %0">;
   def err_init_capture_multiple_expressions : Error<
     "initializer for lambda capture %0 contains multiple expressions">;
   def err_init_capture_deduction_failure : Error<
-    "cannot deduce type for lambda capture %0 from initializer of type %1">;
+    "cannot deduce type for lambda capture %0 from initializer of type %2">;
   def err_init_capture_deduction_failure_from_init_list : Error<
     "cannot deduce type for lambda capture %0 from initializer list">;
 }
