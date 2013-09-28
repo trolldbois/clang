@@ -24,7 +24,6 @@
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/TargetInfo.h"
 #include "llvm/ADT/StringMap.h"
-#include "llvm/ADT/StringSwitch.h"
 
 using namespace clang;
 
@@ -69,29 +68,6 @@ static const FunctionDecl *getStructor(const FunctionDecl *fn) {
     return ftd->getTemplatedDecl();
 
   return fn;
-}
-
-// The ABI expects that we would never mangle "typical" user-defined entry
-// points regardless of visibility or freestanding-ness.
-//
-// N.B. This is distinct from asking about "main".  "main" has a lot of special
-// rules associated with it in the standard while these user-defined entry
-// points are outside of the purview of the standard.  For example, there can be
-// only one definition for "main" in a standards compliant program; however
-// nothing forbids the existence of wmain and WinMain in the same translation
-// unit.
-static bool isUserDefinedEntryPoint(const FunctionDecl *FD) {
-  if (!FD->getIdentifier())
-    return false;
-
-  return llvm::StringSwitch<bool>(FD->getName())
-      .Cases("main",     // An ANSI console app
-             "wmain",    // A Unicode console App
-             "WinMain",  // An ANSI GUI app
-             "wWinMain", // A Unicode GUI app
-             "DllMain",  // A DLL
-             true)
-      .Default(false);
 }
 
 /// MicrosoftCXXNameMangler - Manage the mangling of a single name for the
@@ -186,7 +162,7 @@ private:
   void mangleDecayedArrayType(const ArrayType *T);
   void mangleArrayType(const ArrayType *T);
   void mangleFunctionClass(const FunctionDecl *FD);
-  void mangleCallingConvention(const FunctionType *T, bool IsInstMethod = false);
+  void mangleCallingConvention(const FunctionType *T);
   void mangleIntegerLiteral(const llvm::APSInt &Number, bool IsBoolean);
   void mangleExpression(const Expr *E);
   void mangleThrowSpecification(const FunctionProtoType *T);
@@ -212,6 +188,9 @@ public:
                                   raw_ostream &);
   virtual void mangleCXXVTable(const CXXRecordDecl *RD,
                                raw_ostream &);
+  virtual void mangleCXXVFTable(const CXXRecordDecl *Derived,
+                                ArrayRef<const CXXRecordDecl *> BasePath,
+                                raw_ostream &Out);
   virtual void mangleCXXVTT(const CXXRecordDecl *RD,
                             raw_ostream &);
   virtual void mangleCXXVBTable(const CXXRecordDecl *Derived,
@@ -254,7 +233,16 @@ bool MicrosoftMangleContext::shouldMangleDeclName(const NamedDecl *D) {
     if (FD->hasAttr<OverloadableAttr>())
       return true;
 
-    if (isUserDefinedEntryPoint(FD))
+    // The ABI expects that we would never mangle "typical" user-defined entry
+    // points regardless of visibility or freestanding-ness.
+    //
+    // N.B. This is distinct from asking about "main".  "main" has a lot of
+    // special rules associated with it in the standard while these
+    // user-defined entry points are outside of the purview of the standard.
+    // For example, there can be only one definition for "main" in a standards
+    // compliant program; however nothing forbids the existence of wmain and
+    // WinMain in the same translation unit.
+    if (FD->isMSVCRTEntryPoint())
       return false;
 
     // C++ functions and those whose names are not a simple identifier need
@@ -578,9 +566,15 @@ MicrosoftCXXNameMangler::mangleUnqualifiedName(const NamedDecl *ND,
         break;
       }
 
-      // When VC encounters an anonymous type with no tag and no typedef,
-      // it literally emits '<unnamed-tag>@'.
-      Out << "<unnamed-tag>@";
+      if (TD->hasDeclaratorForAnonDecl())
+        // Anonymous types with no tag or typedef get the name of their
+        // declarator mangled in.
+        Out << "<unnamed-type-" << TD->getDeclaratorForAnonDecl()->getName()
+            << ">@";
+      else
+        // Anonymous types with no tag, no typedef, or declarator get
+        // '<unnamed-tag>@'.
+        Out << "<unnamed-tag>@";
       break;
     }
       
@@ -1346,7 +1340,7 @@ void MicrosoftCXXNameMangler::mangleFunctionType(const FunctionType *T,
     mangleQualifiers(Qualifiers::fromCVRMask(Proto->getTypeQuals()), false);
   }
 
-  mangleCallingConvention(T, IsInstMethod);
+  mangleCallingConvention(T);
 
   // <return-type> ::= <type>
   //               ::= @ # structors (they have no declared return type)
@@ -1450,8 +1444,7 @@ void MicrosoftCXXNameMangler::mangleFunctionClass(const FunctionDecl *FD) {
   } else
     Out << 'Y';
 }
-void MicrosoftCXXNameMangler::mangleCallingConvention(const FunctionType *T,
-                                                      bool IsInstMethod) {
+void MicrosoftCXXNameMangler::mangleCallingConvention(const FunctionType *T) {
   // <calling-convention> ::= A # __cdecl
   //                      ::= B # __export __cdecl
   //                      ::= C # __pascal
@@ -1910,16 +1903,26 @@ void MicrosoftMangleContext::mangleCXXDtorThunk(const CXXDestructorDecl *DD,
 
 void MicrosoftMangleContext::mangleCXXVTable(const CXXRecordDecl *RD,
                                              raw_ostream &Out) {
+  llvm_unreachable(
+      "The Microsoft C++ ABI does not have vtables (use vftables instead)!");
+}
+
+void MicrosoftMangleContext::mangleCXXVFTable(
+    const CXXRecordDecl *Derived, ArrayRef<const CXXRecordDecl *> BasePath,
+    raw_ostream &Out) {
   // <mangled-name> ::= ?_7 <class-name> <storage-class>
   //                    <cvr-qualifiers> [<name>] @
   // NOTE: <cvr-qualifiers> here is always 'B' (const). <storage-class>
   // is always '6' for vftables.
   MicrosoftCXXNameMangler Mangler(*this, Out);
   Mangler.getStream() << "\01??_7";
-  Mangler.mangleName(RD);
-  Mangler.getStream() << "6B";  // '6' for vftable, 'B' for const.
-  // TODO: If the class has more than one vtable, mangle in the class it came
-  // from.
+  Mangler.mangleName(Derived);
+  Mangler.getStream() << "6B"; // '6' for vftable, 'B' for const.
+  for (ArrayRef<const CXXRecordDecl *>::iterator I = BasePath.begin(),
+                                                 E = BasePath.end();
+       I != E; ++I) {
+    Mangler.mangleName(*I);
+  }
   Mangler.getStream() << '@';
 }
 

@@ -43,7 +43,7 @@ class ObjCMigrateASTConsumer : public ASTConsumer {
   };
   
   void migrateDecl(Decl *D);
-  void migrateObjCInterfaceDecl(ASTContext &Ctx, ObjCInterfaceDecl *D);
+  void migrateObjCInterfaceDecl(ASTContext &Ctx, ObjCContainerDecl *D);
   void migrateProtocolConformance(ASTContext &Ctx,
                                   const ObjCImplementationDecl *ImpDecl);
   void migrateNSEnumDecl(ASTContext &Ctx, const EnumDecl *EnumDcl,
@@ -51,8 +51,9 @@ class ObjCMigrateASTConsumer : public ASTConsumer {
   void migrateMethods(ASTContext &Ctx, ObjCContainerDecl *CDecl);
   void migrateMethodInstanceType(ASTContext &Ctx, ObjCContainerDecl *CDecl,
                                  ObjCMethodDecl *OM);
-  bool migrateProperty(ASTContext &Ctx, ObjCInterfaceDecl *D, ObjCMethodDecl *OM);
+  bool migrateProperty(ASTContext &Ctx, ObjCContainerDecl *D, ObjCMethodDecl *OM);
   void migrateNsReturnsInnerPointer(ASTContext &Ctx, ObjCMethodDecl *OM);
+  void migratePropertyNsReturnsInnerPointer(ASTContext &Ctx, ObjCPropertyDecl *P);
   void migrateFactoryMethod(ASTContext &Ctx, ObjCContainerDecl *CDecl,
                             ObjCMethodDecl *OM,
                             ObjCInstanceTypeFamily OIT_Family = OIT_None);
@@ -251,7 +252,7 @@ static bool rewriteToObjCProperty(const ObjCMethodDecl *Getter,
                                   const NSAPI &NS, edit::Commit &commit,
                                   unsigned LengthOfPrefix) {
   ASTContext &Context = NS.getASTContext();
-  std::string PropertyString = "@property(nonatomic";
+  std::string PropertyString = "@property (nonatomic";
   std::string PropertyNameString = Getter->getNameAsString();
   StringRef PropertyName(PropertyNameString);
   if (LengthOfPrefix > 0) {
@@ -304,7 +305,9 @@ static bool rewriteToObjCProperty(const ObjCMethodDecl *Getter,
   }
   PropertyString += " ";
   PropertyString += RT.getAsString(Context.getPrintingPolicy());
-  PropertyString += " ";
+  char LastChar = PropertyString[PropertyString.size()-1];
+  if (LastChar != '*')
+    PropertyString += " ";
   if (LengthOfPrefix > 0) {
     // property name must strip off "is" and lower case the first character
     // after that; e.g. isContinuous will become continuous.
@@ -339,12 +342,23 @@ static bool rewriteToObjCProperty(const ObjCMethodDecl *Getter,
 }
 
 void ObjCMigrateASTConsumer::migrateObjCInterfaceDecl(ASTContext &Ctx,
-                                                      ObjCInterfaceDecl *D) {
+                                                      ObjCContainerDecl *D) {
+  if (D->isDeprecated())
+    return;
+  
   for (ObjCContainerDecl::method_iterator M = D->meth_begin(), MEnd = D->meth_end();
        M != MEnd; ++M) {
     ObjCMethodDecl *Method = (*M);
-    if (!migrateProperty(Ctx, D, Method))
-      migrateNsReturnsInnerPointer(Ctx, Method);
+    if (Method->isDeprecated())
+      continue;
+    migrateProperty(Ctx, D, Method);
+    migrateNsReturnsInnerPointer(Ctx, Method);
+  }
+  for (ObjCContainerDecl::prop_iterator P = D->prop_begin(),
+       E = D->prop_end(); P != E; ++P) {
+    ObjCPropertyDecl *Prop = *P;
+    if (!P->isDeprecated())
+      migratePropertyNsReturnsInnerPointer(Ctx, Prop);
   }
 }
 
@@ -493,7 +507,7 @@ static bool rewriteToNSMacroDecl(const EnumDecl *EnumDcl,
 static bool UseNSOptionsMacro(Preprocessor &PP, ASTContext &Ctx,
                               const EnumDecl *EnumDcl) {
   bool PowerOfTwo = true;
-  bool FoundHexdecimalEnumerator = false;
+  bool AllHexdecimalEnumerator = true;
   uint64_t MaxPowerOfTwoVal = 0;
   for (EnumDecl::enumerator_iterator EI = EnumDcl->enumerator_begin(),
        EE = EnumDcl->enumerator_end(); EI != EE; ++EI) {
@@ -501,9 +515,10 @@ static bool UseNSOptionsMacro(Preprocessor &PP, ASTContext &Ctx,
     const Expr *InitExpr = Enumerator->getInitExpr();
     if (!InitExpr) {
       PowerOfTwo = false;
+      AllHexdecimalEnumerator = false;
       continue;
     }
-    InitExpr = InitExpr->IgnoreImpCasts();
+    InitExpr = InitExpr->IgnoreParenCasts();
     if (const BinaryOperator *BO = dyn_cast<BinaryOperator>(InitExpr))
       if (BO->isShiftOp() || BO->isBitwiseOp())
         return true;
@@ -515,7 +530,8 @@ static bool UseNSOptionsMacro(Preprocessor &PP, ASTContext &Ctx,
       else if (EnumVal > MaxPowerOfTwoVal)
         MaxPowerOfTwoVal = EnumVal;
     }
-    if (!FoundHexdecimalEnumerator) {
+    if (AllHexdecimalEnumerator && EnumVal) {
+      bool FoundHexdecimalEnumerator = false;
       SourceLocation EndLoc = Enumerator->getLocEnd();
       Token Tok;
       if (!PP.getRawToken(EndLoc, Tok, /*IgnoreWhiteSpace=*/true))
@@ -524,15 +540,17 @@ static bool UseNSOptionsMacro(Preprocessor &PP, ASTContext &Ctx,
             FoundHexdecimalEnumerator =
               (StringLit[0] == '0' && (toLowercase(StringLit[1]) == 'x'));
         }
+      if (!FoundHexdecimalEnumerator)
+        AllHexdecimalEnumerator = false;
     }
   }
-  return FoundHexdecimalEnumerator || (PowerOfTwo && (MaxPowerOfTwoVal > 2));
+  return AllHexdecimalEnumerator || (PowerOfTwo && (MaxPowerOfTwoVal > 2));
 }
 
 void ObjCMigrateASTConsumer::migrateProtocolConformance(ASTContext &Ctx,   
                                             const ObjCImplementationDecl *ImpDecl) {
   const ObjCInterfaceDecl *IDecl = ImpDecl->getClassInterface();
-  if (!IDecl || ObjCProtocolDecls.empty())
+  if (!IDecl || ObjCProtocolDecls.empty() || IDecl->isDeprecated())
     return;
   // Find all implicit conforming protocols for this class
   // and make them explicit.
@@ -590,7 +608,8 @@ void ObjCMigrateASTConsumer::migrateNSEnumDecl(ASTContext &Ctx,
                                            const EnumDecl *EnumDcl,
                                            const TypedefDecl *TypedefDcl) {
   if (!EnumDcl->isCompleteDefinition() || EnumDcl->getIdentifier() ||
-      !TypedefDcl->getIdentifier())
+      !TypedefDcl->getIdentifier() ||
+      EnumDcl->isDeprecated() || TypedefDcl->isDeprecated())
     return;
   
   QualType qt = TypedefDcl->getTypeSourceInfo()->getType();
@@ -651,11 +670,6 @@ static void ReplaceWithInstancetype(const ObjCMigrateASTConsumer &ASTC,
 void ObjCMigrateASTConsumer::migrateMethodInstanceType(ASTContext &Ctx,
                                                        ObjCContainerDecl *CDecl,
                                                        ObjCMethodDecl *OM) {
-  // bail out early and do not suggest 'instancetype' when the method already 
-  // has a related result type,
-  if (OM->hasRelatedResultType())
-    return;
-
   ObjCInstanceTypeFamily OIT_Family =
     Selector::getInstTypeMethodFamily(OM->getSelector());
   
@@ -672,6 +686,10 @@ void ObjCMigrateASTConsumer::migrateMethodInstanceType(ASTContext &Ctx,
       break;
     case OIT_Singleton:
       migrateFactoryMethod(Ctx, CDecl, OM, OIT_Singleton);
+      return;
+    case OIT_Init:
+      if (OM->getResultType()->isObjCIdType())
+        ReplaceWithInstancetype(*this, OM);
       return;
   }
   if (!OM->getResultType()->isObjCIdType())
@@ -696,7 +714,8 @@ static bool TypeIsInnerPointer(QualType T) {
   if (!T->isAnyPointerType())
     return false;
   if (T->isObjCObjectPointerType() || T->isObjCBuiltinType() ||
-      T->isBlockPointerType() || ento::coreFoundation::isCFObjectRef(T))
+      T->isBlockPointerType() || T->isFunctionPointerType() ||
+      ento::coreFoundation::isCFObjectRef(T))
     return false;
   // Also, typedef-of-pointer-to-incomplete-struct is something that we assume
   // is not an innter pointer type.
@@ -715,8 +734,45 @@ static bool TypeIsInnerPointer(QualType T) {
   return true;
 }
 
+static bool AttributesMatch(const Decl *Decl1, const Decl *Decl2) {
+  if (Decl1->hasAttrs() != Decl2->hasAttrs())
+    return false;
+  
+  if (!Decl1->hasAttrs())
+    return true;
+  
+  const AttrVec &Attrs1 = Decl1->getAttrs();
+  const AttrVec &Attrs2 = Decl2->getAttrs();
+  // This list is very small, so this need not be optimized.
+  for (unsigned i = 0, e = Attrs1.size(); i != e; i++) {
+    bool match = false;
+    for (unsigned j = 0, f = Attrs2.size(); j != f; j++) {
+      // Matching attribute kind only. We are not getting into
+      // details of the attributes. For all practical purposes
+      // this is sufficient.
+      if (Attrs1[i]->getKind() == Attrs2[j]->getKind()) {
+        match = true;
+        break;
+      }
+    }
+    if (!match)
+      return false;
+  }
+  return true;
+}
+
+static bool IsValidIdentifier(ASTContext &Ctx,
+                              const char *Name) {
+  if (!isIdentifierHead(Name[0]))
+    return false;
+  std::string NameString = Name;
+  NameString[0] = toLowercase(NameString[0]);
+  IdentifierInfo *II = &Ctx.Idents.get(NameString);
+  return II->getTokenID() ==  tok::identifier;
+}
+
 bool ObjCMigrateASTConsumer::migrateProperty(ASTContext &Ctx,
-                             ObjCInterfaceDecl *D,
+                             ObjCContainerDecl *D,
                              ObjCMethodDecl *Method) {
   if (Method->isPropertyAccessor() || !Method->isInstanceMethod() ||
       Method->param_size() != 0)
@@ -725,29 +781,35 @@ bool ObjCMigrateASTConsumer::migrateProperty(ASTContext &Ctx,
   QualType GRT = Method->getResultType();
   if (GRT->isVoidType())
     return false;
-  // FIXME. Don't know what todo with attributes, skip for now.
-  if (Method->hasAttrs())
-    return false;
   
   Selector GetterSelector = Method->getSelector();
+  ObjCInstanceTypeFamily OIT_Family =
+    Selector::getInstTypeMethodFamily(GetterSelector);
+  
+  if (OIT_Family != OIT_None)
+    return false;
+  
   IdentifierInfo *getterName = GetterSelector.getIdentifierInfoForSlot(0);
   Selector SetterSelector =
   SelectorTable::constructSetterSelector(PP.getIdentifierTable(),
                                          PP.getSelectorTable(),
                                          getterName);
-  ObjCMethodDecl *SetterMethod = D->lookupMethod(SetterSelector, true);
+  ObjCMethodDecl *SetterMethod = D->getInstanceMethod(SetterSelector);
   unsigned LengthOfPrefix = 0;
   if (!SetterMethod) {
     // try a different naming convention for getter: isXxxxx
     StringRef getterNameString = getterName->getName();
     bool IsPrefix = getterNameString.startswith("is");
-    if ((IsPrefix && !GRT->isObjCRetainableType()) ||
-        getterNameString.startswith("get")) {
+    // Note that we don't want to change an isXXX method of retainable object
+    // type to property (readonly or otherwise).
+    if (IsPrefix && GRT->isObjCRetainableType())
+      return false;
+    if (IsPrefix || getterNameString.startswith("get")) {
       LengthOfPrefix = (IsPrefix ? 2 : 3);
       const char *CGetterName = getterNameString.data() + LengthOfPrefix;
       // Make sure that first character after "is" or "get" prefix can
       // start an identifier.
-      if (!isIdentifierHead(CGetterName[0]))
+      if (!IsValidIdentifier(Ctx, CGetterName))
         return false;
       if (CGetterName[0] && isUppercase(CGetterName[0])) {
         getterName = &Ctx.Idents.get(CGetterName);
@@ -755,19 +817,23 @@ bool ObjCMigrateASTConsumer::migrateProperty(ASTContext &Ctx,
         SelectorTable::constructSetterSelector(PP.getIdentifierTable(),
                                                PP.getSelectorTable(),
                                                getterName);
-        SetterMethod = D->lookupMethod(SetterSelector, true);
+        SetterMethod = D->getInstanceMethod(SetterSelector);
       }
     }
   }
+  
   if (SetterMethod) {
+    if (SetterMethod->isDeprecated() ||
+        !AttributesMatch(Method, SetterMethod))
+      return false;
+    
     // Is this a valid setter, matching the target getter?
     QualType SRT = SetterMethod->getResultType();
     if (!SRT->isVoidType())
       return false;
     const ParmVarDecl *argDecl = *SetterMethod->param_begin();
     QualType ArgType = argDecl->getType();
-    if (!Ctx.hasSameUnqualifiedType(ArgType, GRT) ||
-        SetterMethod->hasAttrs())
+    if (!Ctx.hasSameUnqualifiedType(ArgType, GRT))
       return false;
     edit::Commit commit(*Editor);
     rewriteToObjCProperty(Method, SetterMethod, *NSAPIObj, commit,
@@ -789,7 +855,9 @@ bool ObjCMigrateASTConsumer::migrateProperty(ASTContext &Ctx,
 
 void ObjCMigrateASTConsumer::migrateNsReturnsInnerPointer(ASTContext &Ctx,
                                                           ObjCMethodDecl *OM) {
-  if (OM->hasAttr<ObjCReturnsInnerPointerAttr>())
+  if (OM->isImplicit() ||
+      !OM->isInstanceMethod() ||
+      OM->hasAttr<ObjCReturnsInnerPointerAttr>())
     return;
   
   QualType RT = OM->getResultType();
@@ -802,13 +870,30 @@ void ObjCMigrateASTConsumer::migrateNsReturnsInnerPointer(ASTContext &Ctx,
   Editor->commit(commit);
 }
 
+void ObjCMigrateASTConsumer::migratePropertyNsReturnsInnerPointer(ASTContext &Ctx,
+                                                                  ObjCPropertyDecl *P) {
+  QualType T = P->getType();
+  
+  if (!TypeIsInnerPointer(T) ||
+      !Ctx.Idents.get("NS_RETURNS_INNER_POINTER").hasMacroDefinition())
+    return;
+  edit::Commit commit(*Editor);
+  commit.insertBefore(P->getLocEnd(), " NS_RETURNS_INNER_POINTER ");
+  Editor->commit(commit);
+}
+
 void ObjCMigrateASTConsumer::migrateMethods(ASTContext &Ctx,
                                                  ObjCContainerDecl *CDecl) {
+  if (CDecl->isDeprecated())
+    return;
+  
   // migrate methods which can have instancetype as their result type.
   for (ObjCContainerDecl::method_iterator M = CDecl->meth_begin(),
        MEnd = CDecl->meth_end();
        M != MEnd; ++M) {
     ObjCMethodDecl *Method = (*M);
+    if (Method->isDeprecated())
+      continue;
     migrateMethodInstanceType(Ctx, CDecl, Method);
   }
 }
@@ -940,6 +1025,9 @@ void ObjCMigrateASTConsumer::AnnotateImplicitBridging(ASTContext &Ctx) {
 }
 
 void ObjCMigrateASTConsumer::migrateCFAnnotation(ASTContext &Ctx, const Decl *Decl) {
+  if (Decl->isDeprecated())
+    return;
+  
   if (Decl->hasAttr<CFAuditedTransferAttr>()) {
     assert(CFFunctionIBCandidates.empty() &&
            "Cannot have audited functions/methods inside user "
@@ -1080,7 +1168,7 @@ ObjCMigrateASTConsumer::CF_BRIDGING_KIND
 
 void ObjCMigrateASTConsumer::migrateARCSafeAnnotation(ASTContext &Ctx,
                                                  ObjCContainerDecl *CDecl) {
-  if (!isa<ObjCInterfaceDecl>(CDecl))
+  if (!isa<ObjCInterfaceDecl>(CDecl) || CDecl->isDeprecated())
     return;
   
   // migrate methods which can have instancetype as their result type.
@@ -1230,13 +1318,13 @@ void ObjCMigrateASTConsumer::HandleTranslationUnit(ASTContext &Ctx) {
          D != DEnd; ++D) {
       if (unsigned FID =
             PP.getSourceManager().getFileID((*D)->getLocation()).getHashValue())
-        if (FileId && FileId != FID) {
-          assert(!CFFunctionIBCandidates.empty());
+        if (FileId && FileId != FID)
           AnnotateImplicitBridging(Ctx);
-        }
           
       if (ObjCInterfaceDecl *CDecl = dyn_cast<ObjCInterfaceDecl>(*D))
         migrateObjCInterfaceDecl(Ctx, CDecl);
+      if (ObjCCategoryDecl *CatDecl = dyn_cast<ObjCCategoryDecl>(*D))
+        migrateObjCInterfaceDecl(Ctx, CatDecl);
       else if (ObjCProtocolDecl *PDecl = dyn_cast<ObjCProtocolDecl>(*D))
         ObjCProtocolDecls.insert(PDecl);
       else if (const ObjCImplementationDecl *ImpDecl =

@@ -949,8 +949,9 @@ public:
   bool findMacroSpelling(SourceLocation &loc, StringRef name);
 
   /// \brief Get a string to suggest for zero-initialization of a type.
-  std::string getFixItZeroInitializerForType(QualType T) const;
-  std::string getFixItZeroLiteralForType(QualType T) const;
+  std::string
+  getFixItZeroInitializerForType(QualType T, SourceLocation Loc) const;
+  std::string getFixItZeroLiteralForType(QualType T, SourceLocation Loc) const;
 
   ExprResult Owned(Expr* E) { return E; }
   ExprResult Owned(ExprResult R) { return R; }
@@ -964,7 +965,13 @@ public:
 
   void PushFunctionScope();
   void PushBlockScope(Scope *BlockScope, BlockDecl *Block);
-  void PushLambdaScope(CXXRecordDecl *Lambda, CXXMethodDecl *CallOperator);
+  void PushLambdaScope();
+  
+  /// \brief This is used to inform Sema what the current TemplateParameterDepth
+  /// is during Parsing.  Currently it is used to pass on the depth
+  /// when parsing generic lambda 'auto' parameters.
+  void RecordParsingTemplateParameterDepth(unsigned Depth);
+  
   void PushCapturedRegionScope(Scope *RegionScope, CapturedDecl *CD,
                                RecordDecl *RD,
                                CapturedRegionKind K);
@@ -991,8 +998,11 @@ public:
   /// \brief Retrieve the current block, if any.
   sema::BlockScopeInfo *getCurBlock();
 
-  /// \brief Retrieve the current lambda expression, if any.
+  /// \brief Retrieve the current lambda scope info, if any.
   sema::LambdaScopeInfo *getCurLambda();
+
+  /// \brief Retrieve the current generic lambda info, if any.
+  sema::LambdaScopeInfo *getCurGenericLambda();
 
   /// \brief Retrieve the current captured region, if any.
   sema::CapturedRegionScopeInfo *getCurCapturedRegion();
@@ -1450,6 +1460,7 @@ public:
   bool diagnoseQualifiedDeclaration(CXXScopeSpec &SS, DeclContext *DC,
                                     DeclarationName Name,
                                     SourceLocation Loc);
+  static bool adjustContextForLocalExternDecl(DeclContext *&DC);
   void DiagnoseFunctionSpecifiers(const DeclSpec &DS);
   void CheckShadow(Scope *S, VarDecl *D, const LookupResult& R);
   void CheckShadow(Scope *S, VarDecl *D);
@@ -1460,7 +1471,6 @@ public:
                                     LookupResult &Previous);
   NamedDecl* ActOnTypedefNameDecl(Scope* S, DeclContext* DC, TypedefNameDecl *D,
                                   LookupResult &Previous, bool &Redeclaration);
-  bool HandleVariableRedeclaration(Decl *D, CXXScopeSpec &SS);
   NamedDecl *ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
                                      TypeSourceInfo *TInfo,
                                      LookupResult &Previous,
@@ -1495,6 +1505,7 @@ public:
                                 FunctionDecl *NewFD, LookupResult &Previous,
                                 bool IsExplicitSpecialization);
   void CheckMain(FunctionDecl *FD, const DeclSpec &D);
+  void CheckMSVCRTEntryPoint(FunctionDecl *FD);
   Decl *ActOnParamDeclarator(Scope *S, Declarator &D);
   ParmVarDecl *BuildParmVarDeclForTypedef(DeclContext *DC,
                                           SourceLocation Loc,
@@ -2482,7 +2493,8 @@ public:
                              CorrectionCandidateCallback &CCC,
                              DeclContext *MemberContext = 0,
                              bool EnteringContext = false,
-                             const ObjCObjectPointerType *OPT = 0);
+                             const ObjCObjectPointerType *OPT = 0,
+                             bool RecordFailure = true);
 
   void diagnoseTypo(const TypoCorrection &Correction,
                     const PartialDiagnostic &TypoDiag,
@@ -2693,6 +2705,17 @@ private:
   ObjCMethodDecl *LookupMethodInGlobalPool(Selector Sel, SourceRange R,
                                            bool receiverIdOrClass,
                                            bool warn, bool instance);
+
+  /// \brief Record the typo correction failure and return an empty correction.
+  TypoCorrection FailedCorrection(IdentifierInfo *Typo, SourceLocation TypoLoc,
+                                  bool RecordFailure = true,
+                                  bool IsUnqualifiedLookup = false) {
+    if (IsUnqualifiedLookup)
+      (void)UnqualifiedTyposCorrected[Typo];
+    if (RecordFailure)
+      TypoCorrectionFailures[Typo].insert(TypoLoc);
+    return TypoCorrection();
+  }
 
 public:
   /// AddInstanceMethodToGlobalPool - All instance methods in a translation
@@ -3236,6 +3259,8 @@ public:
                                       SourceLocation LitEndLoc,
                             TemplateArgumentListInfo *ExplicitTemplateArgs = 0);
 
+  ExprResult BuildPredefinedExpr(SourceLocation Loc,
+                                 PredefinedExpr::IdentType IT);
   ExprResult ActOnPredefinedExpr(SourceLocation Loc, tok::TokenKind Kind);
   ExprResult ActOnIntegerConstant(SourceLocation Loc, uint64_t Val);
   ExprResult ActOnNumericConstant(const Token &Tok, Scope *UDLScope = 0);
@@ -3542,6 +3567,13 @@ public:
   /// literal was successfully completed.  ^(int x){...}
   ExprResult ActOnBlockStmtExpr(SourceLocation CaretLoc, Stmt *Body,
                                 Scope *CurScope);
+
+  //===---------------------------- Clang Extensions ----------------------===//
+
+  /// __builtin_convertvector(...)
+  ExprResult ActOnConvertVectorExpr(Expr *E, ParsedType ParsedDestTy,
+                                    SourceLocation BuiltinLoc,
+                                    SourceLocation RParenLoc);
 
   //===---------------------------- OpenCL Features -----------------------===//
 
@@ -4416,14 +4448,15 @@ public:
                                        SourceLocation EndLoc,
                                        ArrayRef<ParmVarDecl *> Params);
 
-  /// \brief Introduce the scope for a lambda expression.
-  sema::LambdaScopeInfo *enterLambdaScope(CXXMethodDecl *CallOperator,
-                                          SourceRange IntroducerRange,
-                                          LambdaCaptureDefault CaptureDefault,
-                                          SourceLocation CaptureDefaultLoc,
-                                          bool ExplicitParams,
-                                          bool ExplicitResultType,
-                                          bool Mutable);
+  /// \brief Endow the lambda scope info with the relevant properties.
+  void buildLambdaScope(sema::LambdaScopeInfo *LSI, 
+                        CXXMethodDecl *CallOperator,
+                        SourceRange IntroducerRange,
+                        LambdaCaptureDefault CaptureDefault,
+                        SourceLocation CaptureDefaultLoc,
+                        bool ExplicitParams,
+                        bool ExplicitResultType,
+                        bool Mutable);
 
   /// \brief Check and build an init-capture with the specified name and
   /// initializer.
@@ -5808,6 +5841,12 @@ public:
                           sema::TemplateDeductionInfo &Info,
                           bool InOverloadResolution = false);
 
+  /// \brief Substitute Replacement for \p auto in \p TypeWithAuto
+  QualType SubstAutoType(QualType TypeWithAuto, QualType Replacement);
+  /// \brief Substitute Replacement for auto in TypeWithAuto
+  TypeSourceInfo* SubstAutoTypeSourceInfo(TypeSourceInfo *TypeWithAuto, 
+                                          QualType Replacement);
+
   /// \brief Result type of DeduceAutoType.
   enum DeduceAutoResult {
     DAR_Succeeded,
@@ -5819,7 +5858,6 @@ public:
                                   QualType &Result);
   DeduceAutoResult DeduceAutoType(TypeLoc AutoTypeLoc, Expr *&Initializer,
                                   QualType &Result);
-  QualType SubstAutoType(QualType TypeWithAuto, QualType Replacement);
   void DiagnoseAutoDeductionFailure(VarDecl *VDecl, Expr *Init);
   bool DeduceReturnType(FunctionDecl *FD, SourceLocation Loc,
                         bool Diagnose = true);
@@ -6282,6 +6320,14 @@ public:
   /// string represents a keyword.
   UnqualifiedTyposCorrectedMap UnqualifiedTyposCorrected;
 
+  typedef llvm::SmallSet<SourceLocation, 2> SrcLocSet;
+  typedef llvm::DenseMap<IdentifierInfo *, SrcLocSet> IdentifierSourceLocations;
+
+  /// \brief A cache containing identifiers for which typo correction failed and
+  /// their locations, so that repeated attempts to correct an identifier in a
+  /// given location are ignored if typo correction already failed for it.
+  IdentifierSourceLocations TypoCorrectionFailures;
+
   /// \brief Worker object for performing CFG-based warnings.
   sema::AnalysisBasedWarnings AnalysisWarnings;
 
@@ -6455,8 +6501,9 @@ public:
   void
   BuildVariableInstantiation(VarDecl *NewVar, VarDecl *OldVar,
                              const MultiLevelTemplateArgumentList &TemplateArgs,
-                             LateInstantiatedAttrVec *LateAttrs = 0,
-                             LocalInstantiationScope *StartingScope = 0,
+                             LateInstantiatedAttrVec *LateAttrs,
+                             DeclContext *Owner,
+                             LocalInstantiationScope *StartingScope,
                              bool InstantiatingVarTemplate = false);
   void InstantiateVariableInitializer(
       VarDecl *Var, VarDecl *OldVar,
@@ -6501,6 +6548,10 @@ public:
                                  const SourceLocation *ProtoLocs,
                                  SourceLocation EndProtoLoc,
                                  AttributeList *AttrList);
+  
+  void ActOnTypedefedProtocols(SmallVectorImpl<Decl *> &ProtocolRefs,
+                               IdentifierInfo *SuperName,
+                               SourceLocation SuperLoc);
 
   Decl *ActOnCompatibilityAlias(
                     SourceLocation AtCompatibilityAliasLoc,
@@ -7708,6 +7759,9 @@ private:
 public:
   // Used by C++ template instantiation.
   ExprResult SemaBuiltinShuffleVector(CallExpr *TheCall);
+  ExprResult SemaConvertVectorExpr(Expr *E, TypeSourceInfo *TInfo,
+                                   SourceLocation BuiltinLoc,
+                                   SourceLocation RParenLoc);
 
 private:
   bool SemaBuiltinPrefetch(CallExpr *TheCall);

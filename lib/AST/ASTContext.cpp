@@ -706,7 +706,6 @@ static bool isAddrSpaceMapManglingEnabled(const TargetInfo &TI,
     return false;
   }
   llvm_unreachable("getAddressSpaceMapMangling() doesn't cover anything.");
-  return false;
 }
 
 ASTContext::ASTContext(LangOptions& LOpts, SourceManager &SM,
@@ -5553,7 +5552,8 @@ void ASTContext::getObjCEncodingForStructureImpl(RecordDecl *RDecl,
       if (base->isEmpty())
         continue;
       uint64_t offs = toBits(layout.getVBaseClassOffset(base));
-      if (FieldOrBaseOffsets.find(offs) == FieldOrBaseOffsets.end())
+      if (offs >= uint64_t(toBits(layout.getNonVirtualSize())) &&
+          FieldOrBaseOffsets.find(offs) == FieldOrBaseOffsets.end())
         FieldOrBaseOffsets.insert(FieldOrBaseOffsets.end(),
                                   std::make_pair(offs, base));
     }
@@ -7864,14 +7864,7 @@ GVALinkage ASTContext::GetGVALinkageForVariable(const VarDecl *VD) {
   if (!VD->isExternallyVisible())
     return GVA_Internal;
 
-  // If this is a static data member, compute the kind of template
-  // specialization. Otherwise, this variable is not part of a
-  // template.
-  TemplateSpecializationKind TSK = TSK_Undeclared;
-  if (VD->isStaticDataMember())
-    TSK = VD->getTemplateSpecializationKind();
-
-  switch (TSK) {
+  switch (VD->getTemplateSpecializationKind()) {
   case TSK_Undeclared:
   case TSK_ExplicitSpecialization:
     return GVA_StrongExternal;

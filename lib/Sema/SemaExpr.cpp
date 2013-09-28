@@ -2459,7 +2459,7 @@ bool Sema::UseArgumentDependentLookup(const CXXScopeSpec &SS,
     // turn off ADL anyway).
     if (isa<UsingShadowDecl>(D))
       D = cast<UsingShadowDecl>(D)->getTargetDecl();
-    else if (D->getDeclContext()->isFunctionOrMethod())
+    else if (D->getLexicalDeclContext()->isFunctionOrMethod())
       return false;
 
     // C++0x [basic.lookup.argdep]p3:
@@ -2745,22 +2745,10 @@ ExprResult Sema::BuildDeclarationNameExpr(
   }
 }
 
-ExprResult Sema::ActOnPredefinedExpr(SourceLocation Loc, tok::TokenKind Kind) {
-  PredefinedExpr::IdentType IT;
-
-  switch (Kind) {
-  default: llvm_unreachable("Unknown simple primary expr!");
-  case tok::kw___func__: IT = PredefinedExpr::Func; break; // [C99 6.4.2.2]
-  case tok::kw___FUNCTION__: IT = PredefinedExpr::Function; break;
-  case tok::kw_L__FUNCTION__: IT = PredefinedExpr::LFunction; break;
-  case tok::kw___PRETTY_FUNCTION__: IT = PredefinedExpr::PrettyFunction; break;
-  }
-
-  // Pre-defined identifiers are of type char[x], where x is the length of the
-  // string.
-
-  // Pick the current block, lambda or function.
-  Decl *currentDecl;
+ExprResult Sema::BuildPredefinedExpr(SourceLocation Loc,
+                                     PredefinedExpr::IdentType IT) {
+  // Pick the current block, lambda, captured statement or function.
+  Decl *currentDecl = 0;
   if (const BlockScopeInfo *BSI = getCurBlock())
     currentDecl = BSI->TheDecl;
   else if (const LambdaScopeInfo *LSI = getCurLambda())
@@ -2776,9 +2764,11 @@ ExprResult Sema::ActOnPredefinedExpr(SourceLocation Loc, tok::TokenKind Kind) {
   }
 
   QualType ResTy;
-  if (cast<DeclContext>(currentDecl)->isDependentContext()) {
+  if (cast<DeclContext>(currentDecl)->isDependentContext())
     ResTy = Context.DependentTy;
-  } else {
+  else {
+    // Pre-defined identifiers are of type char[x], where x is the length of
+    // the string.
     unsigned Length = PredefinedExpr::ComputeName(IT, currentDecl).length();
 
     llvm::APInt LengthI(32, Length + 1);
@@ -2788,7 +2778,22 @@ ExprResult Sema::ActOnPredefinedExpr(SourceLocation Loc, tok::TokenKind Kind) {
       ResTy = Context.CharTy.withConst();
     ResTy = Context.getConstantArrayType(ResTy, LengthI, ArrayType::Normal, 0);
   }
+
   return Owned(new (Context) PredefinedExpr(Loc, ResTy, IT));
+}
+
+ExprResult Sema::ActOnPredefinedExpr(SourceLocation Loc, tok::TokenKind Kind) {
+  PredefinedExpr::IdentType IT;
+
+  switch (Kind) {
+  default: llvm_unreachable("Unknown simple primary expr!");
+  case tok::kw___func__: IT = PredefinedExpr::Func; break; // [C99 6.4.2.2]
+  case tok::kw___FUNCTION__: IT = PredefinedExpr::Function; break;
+  case tok::kw_L__FUNCTION__: IT = PredefinedExpr::LFunction; break;
+  case tok::kw___PRETTY_FUNCTION__: IT = PredefinedExpr::PrettyFunction; break;
+  }
+
+  return BuildPredefinedExpr(Loc, IT);
 }
 
 ExprResult Sema::ActOnCharacterConstant(const Token &Tok, Scope *UDLScope) {
@@ -3973,10 +3978,12 @@ Sema::ConvertArgumentsForCall(CallExpr *Call, Expr *Fn,
   // arguments for the remaining parameters), don't make the call.
   if (Args.size() < NumArgsInProto) {
     if (Args.size() < MinArgs) {
+      MemberExpr *ME = dyn_cast<MemberExpr>(Fn);
       TypoCorrection TC;
       if (FDecl && (TC = TryTypoCorrectionForCall(
                         *this, DeclarationNameInfo(FDecl->getDeclName(),
-                                                   Fn->getLocStart()),
+                                                   (ME ? ME->getMemberLoc()
+                                                       : Fn->getLocStart())),
                         Args))) {
         unsigned diag_id =
             MinArgs == NumArgsInProto && !Proto->isVariadic()
@@ -4456,6 +4463,19 @@ ExprResult Sema::ActOnAsTypeExpr(Expr *E, ParsedType ParsedDestTy,
                      << E->getSourceRange());
   return Owned(new (Context) AsTypeExpr(E, DstTy, VK, OK, BuiltinLoc,
                RParenLoc));
+}
+
+/// ActOnConvertVectorExpr - create a new convert-vector expression from the
+/// provided arguments.
+///
+/// __builtin_convertvector( value, dst type )
+///
+ExprResult Sema::ActOnConvertVectorExpr(Expr *E, ParsedType ParsedDestTy,
+                                        SourceLocation BuiltinLoc,
+                                        SourceLocation RParenLoc) {
+  TypeSourceInfo *TInfo;
+  GetTypeFromParser(ParsedDestTy, &TInfo);
+  return SemaConvertVectorExpr(E, TInfo, BuiltinLoc, RParenLoc);
 }
 
 /// BuildResolvedCallExpr - Build a call to a resolved expression,
@@ -10990,7 +11010,8 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func) {
     // However, they cannot be referenced if they are deleted, and they are
     // deleted whenever the implicit definition of the special member would
     // fail.
-    if (!Func->isConstexpr() || Func->getBody())
+    if (!(Func->isConstexpr() && !getLangOpts().DelayedTemplateParsing) ||
+        Func->getBody())
       return;
     CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(Func);
     if (!Func->isImplicitlyInstantiable() && (!MD || MD->isUserProvided()))
@@ -11081,13 +11102,14 @@ void Sema::MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func) {
       }
     }
 
-    if (!AlreadyInstantiated || Func->isConstexpr()) {
+    if (!AlreadyInstantiated ||
+        (Func->isConstexpr() && !getLangOpts().DelayedTemplateParsing)) {
       if (isa<CXXRecordDecl>(Func->getDeclContext()) &&
           cast<CXXRecordDecl>(Func->getDeclContext())->isLocalClass() &&
           ActiveTemplateInstantiations.size())
         PendingLocalImplicitInstantiations.push_back(
             std::make_pair(Func, PointOfInstantiation));
-      else if (Func->isConstexpr())
+      else if (Func->isConstexpr() && !getLangOpts().DelayedTemplateParsing)
         // Do not defer instantiations of constexpr functions, to avoid the
         // expression evaluator needing to call back into Sema if it sees a
         // call to such a function.
@@ -11745,45 +11767,33 @@ static void DoMarkVarDeclReferenced(Sema &SemaRef, SourceLocation Loc,
 
   VarTemplateSpecializationDecl *VarSpec =
       dyn_cast<VarTemplateSpecializationDecl>(Var);
+  assert(!isa<VarTemplatePartialSpecializationDecl>(Var) &&
+         "Can't instantiate a partial template specialization.");
 
   // Implicit instantiation of static data members, static data member
   // templates of class templates, and variable template specializations.
   // Delay instantiations of variable templates, except for those
   // that could be used in a constant expression.
-  if (VarSpec || (Var->isStaticDataMember() &&
-                  Var->getInstantiatedFromStaticDataMember())) {
-    MemberSpecializationInfo *MSInfo = Var->getMemberSpecializationInfo();
-    if (VarSpec)
-      assert(!isa<VarTemplatePartialSpecializationDecl>(Var) &&
-             "Can't instantiate a partial template specialization.");
-    if (Var->isStaticDataMember())
-      assert(MSInfo && "Missing member specialization information?");
+  TemplateSpecializationKind TSK = Var->getTemplateSpecializationKind();
+  if (isTemplateInstantiation(TSK)) {
+    bool TryInstantiating = TSK == TSK_ImplicitInstantiation;
 
-    SourceLocation PointOfInstantiation;
-    bool InstantiationIsOkay = true;
-    if (MSInfo) {
-      bool AlreadyInstantiated = !MSInfo->getPointOfInstantiation().isInvalid();
-      TemplateSpecializationKind TSK = MSInfo->getTemplateSpecializationKind();
-
-      if (TSK == TSK_ImplicitInstantiation &&
-          (!AlreadyInstantiated ||
-           Var->isUsableInConstantExpressions(SemaRef.Context))) {
-        if (!AlreadyInstantiated) {
-          // This is a modification of an existing AST node. Notify listeners.
-          if (ASTMutationListener *L = SemaRef.getASTMutationListener())
-            L->StaticDataMemberInstantiated(Var);
-          MSInfo->setPointOfInstantiation(Loc);
-        }
-        PointOfInstantiation = MSInfo->getPointOfInstantiation();
-      } else
-        InstantiationIsOkay = false;
-    } else {
-      if (VarSpec->getPointOfInstantiation().isInvalid())
-        VarSpec->setPointOfInstantiation(Loc);
-      PointOfInstantiation = VarSpec->getPointOfInstantiation();
+    if (TryInstantiating && !isa<VarTemplateSpecializationDecl>(Var)) {
+      if (Var->getPointOfInstantiation().isInvalid()) {
+        // This is a modification of an existing AST node. Notify listeners.
+        if (ASTMutationListener *L = SemaRef.getASTMutationListener())
+          L->StaticDataMemberInstantiated(Var);
+      } else if (!Var->isUsableInConstantExpressions(SemaRef.Context))
+        // Don't bother trying to instantiate it again, unless we might need
+        // its initializer before we get to the end of the TU.
+        TryInstantiating = false;
     }
 
-    if (InstantiationIsOkay) {
+    if (Var->getPointOfInstantiation().isInvalid())
+      Var->setTemplateSpecializationKind(TSK, Loc);
+
+    if (TryInstantiating) {
+      SourceLocation PointOfInstantiation = Var->getPointOfInstantiation();
       bool InstantiationDependent = false;
       bool IsNonDependent =
           VarSpec ? !TemplateSpecializationType::anyDependentTemplateArguments(

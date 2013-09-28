@@ -45,6 +45,19 @@ struct ScalarEnumerationTraits<clang::format::FormatStyle::LanguageStandard> {
 };
 
 template <>
+struct ScalarEnumerationTraits<clang::format::FormatStyle::UseTabStyle> {
+  static void
+  enumeration(IO &IO, clang::format::FormatStyle::UseTabStyle &Value) {
+    IO.enumCase(Value, "Never", clang::format::FormatStyle::UT_Never);
+    IO.enumCase(Value, "false", clang::format::FormatStyle::UT_Never);
+    IO.enumCase(Value, "Always", clang::format::FormatStyle::UT_Always);
+    IO.enumCase(Value, "true", clang::format::FormatStyle::UT_Always);
+    IO.enumCase(Value, "ForIndentation",
+                clang::format::FormatStyle::UT_ForIndentation);
+  }
+};
+
+template <>
 struct ScalarEnumerationTraits<clang::format::FormatStyle::BraceBreakingStyle> {
   static void
   enumeration(IO &IO, clang::format::FormatStyle::BraceBreakingStyle &Value) {
@@ -147,6 +160,8 @@ template <> struct MappingTraits<clang::format::FormatStyle> {
                    Style.SpacesInCStyleCastParentheses);
     IO.mapOptional("SpaceAfterControlStatementKeyword",
                    Style.SpaceAfterControlStatementKeyword);
+    IO.mapOptional("SpaceBeforeAssignmentOperators",
+                   Style.SpaceBeforeAssignmentOperators);
   }
 };
 }
@@ -192,11 +207,12 @@ FormatStyle getLLVMStyle() {
   LLVMStyle.PointerBindsToType = false;
   LLVMStyle.SpacesBeforeTrailingComments = 1;
   LLVMStyle.Standard = FormatStyle::LS_Cpp03;
-  LLVMStyle.UseTab = false;
+  LLVMStyle.UseTab = FormatStyle::UT_Never;
   LLVMStyle.SpacesInParentheses = false;
   LLVMStyle.SpaceInEmptyParentheses = false;
   LLVMStyle.SpacesInCStyleCastParentheses = false;
   LLVMStyle.SpaceAfterControlStatementKeyword = true;
+  LLVMStyle.SpaceBeforeAssignmentOperators = true;
 
   setDefaultPenalties(LLVMStyle);
   LLVMStyle.PenaltyReturnTypeOnItsOwnLine = 60;
@@ -234,11 +250,12 @@ FormatStyle getGoogleStyle() {
   GoogleStyle.PointerBindsToType = true;
   GoogleStyle.SpacesBeforeTrailingComments = 2;
   GoogleStyle.Standard = FormatStyle::LS_Auto;
-  GoogleStyle.UseTab = false;
+  GoogleStyle.UseTab = FormatStyle::UT_Never;
   GoogleStyle.SpacesInParentheses = false;
   GoogleStyle.SpaceInEmptyParentheses = false;
   GoogleStyle.SpacesInCStyleCastParentheses = false;
   GoogleStyle.SpaceAfterControlStatementKeyword = true;
+  GoogleStyle.SpaceBeforeAssignmentOperators = true;
 
   setDefaultPenalties(GoogleStyle);
   GoogleStyle.PenaltyReturnTypeOnItsOwnLine = 200;
@@ -535,7 +552,7 @@ private:
                                        Style.MaxEmptyLinesToKeep + 1);
           Newlines = std::max(1u, Newlines);
           Whitespaces->replaceWhitespace(
-              *(*I)->First, Newlines, /*Spaces=*/Indent,
+              *(*I)->First, Newlines, (*I)->Level, /*Spaces=*/Indent,
               /*StartOfTokenColumn=*/Indent, Line.InPPDirective);
         }
         UnwrappedLineFormatter Formatter(Indenter, Whitespaces, Style, **I);
@@ -552,10 +569,10 @@ private:
       return false;
 
     if (!DryRun) {
-      Whitespaces->replaceWhitespace(*LBrace.Children[0]->First,
-                                     /*Newlines=*/0, /*Spaces=*/1,
-                                     /*StartOfTokenColumn=*/State.Column,
-                                     State.Line->InPPDirective);
+      Whitespaces->replaceWhitespace(
+          *LBrace.Children[0]->First,
+          /*Newlines=*/0, /*IndentLevel=*/1, /*Spaces=*/1,
+          /*StartOfTokenColumn=*/State.Column, State.Line->InPPDirective);
       UnwrappedLineFormatter Formatter(Indenter, Whitespaces, Style,
                                        *LBrace.Children[0]);
       Penalty += Formatter.format(State.Column + 1, DryRun);
@@ -591,6 +608,7 @@ public:
     assert(Tokens.empty());
     do {
       Tokens.push_back(getNextToken());
+      maybeJoinPreviousTokens();
     } while (Tokens.back()->Tok.isNot(tok::eof));
     return Tokens;
   }
@@ -598,6 +616,40 @@ public:
   IdentifierTable &getIdentTable() { return IdentTable; }
 
 private:
+  void maybeJoinPreviousTokens() {
+    if (Tokens.size() < 4)
+      return;
+    FormatToken *Last = Tokens.back();
+    if (!Last->is(tok::r_paren))
+      return;
+
+    FormatToken *String = Tokens[Tokens.size() - 2];
+    if (!String->is(tok::string_literal) || String->IsMultiline)
+      return;
+
+    if (!Tokens[Tokens.size() - 3]->is(tok::l_paren))
+      return;
+
+    FormatToken *Macro = Tokens[Tokens.size() - 4];
+    if (Macro->TokenText != "_T")
+      return;
+
+    const char *Start = Macro->TokenText.data();
+    const char *End = Last->TokenText.data() + Last->TokenText.size();
+    String->TokenText = StringRef(Start, End - Start);
+    String->IsFirst = Macro->IsFirst;
+    String->LastNewlineOffset = Macro->LastNewlineOffset;
+    String->WhitespaceRange = Macro->WhitespaceRange;
+    String->OriginalColumn = Macro->OriginalColumn;
+    String->ColumnWidth = encoding::columnWidthWithTabs(
+        String->TokenText, String->OriginalColumn, Style.TabWidth, Encoding);
+
+    Tokens.pop_back();
+    Tokens.pop_back();
+    Tokens.pop_back();
+    Tokens.back() = String;
+  }
+
   FormatToken *getNextToken() {
     if (GreaterStashed) {
       // Create a synthesized second '>' token.
@@ -808,8 +860,9 @@ public:
       if (TheLine.First->is(tok::eof)) {
         if (PreviousLineWasTouched) {
           unsigned NewLines = std::min(FirstTok->NewlinesBefore, 1u);
-          Whitespaces.replaceWhitespace(*TheLine.First, NewLines, /*Indent*/ 0,
-                                        /*TargetColumn*/ 0);
+          Whitespaces.replaceWhitespace(*TheLine.First, NewLines,
+                                        /*IndentLevel=*/0, /*Spaces=*/0,
+                                        /*TargetColumn=*/0);
         }
       } else if (TheLine.Type != LT_Invalid &&
                  (WasMoved || FormatPPDirective || touchesLine(TheLine))) {
@@ -1135,7 +1188,8 @@ private:
     CharSourceRange LineRange = CharSourceRange::getCharRange(
         First->WhitespaceRange.getBegin().getLocWithOffset(
             First->LastNewlineOffset),
-        Last->Tok.getLocation().getLocWithOffset(Last->TokenText.size() - 1));
+        Last->getStartOfNonWhitespace().getLocWithOffset(
+            Last->TokenText.size() - 1));
     return touchesRanges(LineRange);
   }
 
@@ -1185,7 +1239,7 @@ private:
       ++Newlines;
 
     Whitespaces.replaceWhitespace(
-        RootToken, Newlines, Indent, Indent,
+        RootToken, Newlines, Indent / Style.IndentWidth, Indent, Indent,
         InPPDirective && !RootToken.HasUnescapedNewline);
   }
 
