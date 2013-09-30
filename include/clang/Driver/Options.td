@@ -646,6 +646,7 @@ def fno_spell_checking : Flag<["-"], "fno-spell-checking">, Group<f_Group>,
 def fno_stack_protector : Flag<["-"], "fno-stack-protector">, Group<f_Group>;
 def fno_strict_aliasing : Flag<["-"], "fno-strict-aliasing">, Group<f_Group>;
 def fstruct_path_tbaa : Flag<["-"], "fstruct-path-tbaa">, Group<f_Group>;
+def fno_struct_path_tbaa : Flag<["-"], "fno-struct-path-tbaa">, Group<f_Group>;
 def fno_strict_enums : Flag<["-"], "fno-strict-enums">, Group<f_Group>;
 def fno_strict_overflow : Flag<["-"], "fno-strict-overflow">, Group<f_Group>;
 def fno_threadsafe_statics : Flag<["-"], "fno-threadsafe-statics">, Group<f_Group>,
@@ -1378,23 +1379,40 @@ def fprofile_dir : Joined<["-"], "fprofile-dir=">, Group<clang_ignored_f_Group>;
 defm profile_use : BooleanFFlag<"profile-use">, Group<clang_ignored_f_Group>;
 def fprofile_use_eq : Joined<["-"], "fprofile-use=">, Group<clang_ignored_f_Group>;
 
-defm falign_functions : BooleanFFlag<"align-functions">, Group<clang_ignored_f_Group>;
+defm align_functions : BooleanFFlag<"align-functions">, Group<clang_ignored_f_Group>;
 def falign_functions_eq : Joined<["-"], "falign-functions=">, Group<clang_ignored_f_Group>;
 
-defm tracer : BooleanFFlag<"tracer">, Group<clang_ignored_f_Group>;
-defm unroll_all_loops : BooleanFFlag<"unroll-all-loops">, Group<clang_ignored_f_Group>;
-defm sse : BooleanFFlag<"see">, Group<clang_ignored_f_Group>;
-defm rounding_math : BooleanFFlag<"rounding-math">, Group<clang_ignored_f_Group>;
-defm profile_values : BooleanFFlag<"profile-values">, Group<clang_ignored_f_Group>;
-defm profile_correction : BooleanFFlag<"profile-correction">, Group<clang_ignored_f_Group>;
-defm prefetch_loop_arrays : BooleanFFlag<"prefetch-loop-arrays">, Group<clang_ignored_f_Group>;
-defm permissive : BooleanFFlag<"permissive">, Group<clang_ignored_f_Group>;
-defm non_call_exceptions : BooleanFFlag<"non-call-exceptions">, Group<clang_ignored_f_Group>;
-defm ivopts : BooleanFFlag<"ivopts">, Group<clang_ignored_f_Group>;
-defm ident : BooleanFFlag<"ident">, Group<clang_ignored_f_Group>;
-defm gcse : BooleanFFlag<"gcse">, Group<clang_ignored_f_Group>;
+def ffixed_line_length_VALUE : Joined<["-"], "ffixed-line-length-">, Group<clang_ignored_f_Group>;
+
 defm eliminate_unused_debug_types : BooleanFFlag<"eliminate-unused-debug-types">, Group<clang_ignored_f_Group>;
 defm float_store : BooleanFFlag<"float-store">, Group<clang_ignored_f_Group>;
+defm function_attribute_list : BooleanFFlag<"function-attribute-list">, Group<clang_ignored_f_Group>;
+defm gcse : BooleanFFlag<"gcse">, Group<clang_ignored_f_Group>;
+defm gnu : BooleanFFlag<"gnu">, Group<clang_ignored_f_Group>;
+defm ident : BooleanFFlag<"ident">, Group<clang_ignored_f_Group>;
+defm inline_limit : BooleanFFlag<"inline-limit">, Group<clang_ignored_f_Group>;
+defm ivopts : BooleanFFlag<"ivopts">, Group<clang_ignored_f_Group>;
+defm non_call_exceptions : BooleanFFlag<"non-call-exceptions">, Group<clang_ignored_f_Group>;
+defm permissive : BooleanFFlag<"permissive">, Group<clang_ignored_f_Group>;
+defm prefetch_loop_arrays : BooleanFFlag<"prefetch-loop-arrays">, Group<clang_ignored_f_Group>;
+defm printf : BooleanFFlag<"printf">, Group<clang_ignored_f_Group>;
+defm profile : BooleanFFlag<"profile">, Group<clang_ignored_f_Group>;
+defm profile_correction : BooleanFFlag<"profile-correction">, Group<clang_ignored_f_Group>;
+defm profile_generate_sampling : BooleanFFlag<"profile-generate-sampling">, Group<clang_ignored_f_Group>;
+defm profile_reusedist : BooleanFFlag<"profile-reusedist">, Group<clang_ignored_f_Group>;
+defm profile_values : BooleanFFlag<"profile-values">, Group<clang_ignored_f_Group>;
+defm regs_graph : BooleanFFlag<"regs-graph">, Group<clang_ignored_f_Group>;
+defm ripa : BooleanFFlag<"ripa">, Group<clang_ignored_f_Group>;
+defm rounding_math : BooleanFFlag<"rounding-math">, Group<clang_ignored_f_Group>;
+defm schedule_insns : BooleanFFlag<"schedule-insns">, Group<clang_ignored_f_Group>;
+defm signaling_nans : BooleanFFlag<"signaling-nans">, Group<clang_ignored_f_Group>;
+defm spec_constr_count : BooleanFFlag<"spec-constr-count">, Group<clang_ignored_f_Group>;
+defm tls_model : BooleanFFlag<"tls-model">, Group<clang_ignored_f_Group>;
+defm tracer : BooleanFFlag<"tracer">, Group<clang_ignored_f_Group>;
+defm tree_salias : BooleanFFlag<"tree-salias">, Group<clang_ignored_f_Group>;
+defm tree_vectorizer_verbose : BooleanFFlag<"tree-vectorizer-verbose">, Group<clang_ignored_f_Group>;
+defm unroll_all_loops : BooleanFFlag<"unroll-all-loops">, Group<clang_ignored_f_Group>;
+defm unswitch_loops : BooleanFFlag<"unswitch-loops">, Group<clang_ignored_f_Group>;
 
 include "CC1Options.td"
 
