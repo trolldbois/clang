@@ -83,9 +83,6 @@ def ext_vla : Extension<"variable length arrays are a C99 feature">,
   InGroup<VLAExtension>;
 def warn_vla_used : Warning<"variable length array used">,
   InGroup<VLA>, DefaultIgnore;
-def warn_cxx11_compat_array_of_runtime_bound : Warning<
-  "arrays of runtime bound are incompatible with C++ standards before C++1y">,
-  InGroup<CXXPre1yCompatPedantic>, DefaultIgnore;
 def err_vla_non_pod : Error<"variable length array of non-POD element type %0">;
 def err_vla_in_sfinae : Error<
   "variable length array cannot be formed during template argument deduction">;
@@ -6630,6 +6627,8 @@ def err_omp_var_thread_local : Error<
   "variable %0 cannot be threadprivate because it is thread-local">;
 def err_omp_private_incomplete_type : Error<
   "a private variable with incomplete type %0">;
+def err_omp_firstprivate_incomplete_type : Error<
+  "a firstprivate variable with incomplete type %0">;
 def err_omp_unexpected_clause_value : Error <
   "expected %0 in OpenMP clause '%1'">;
 def err_omp_expected_var_name : Error <
