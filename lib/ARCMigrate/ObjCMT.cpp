@@ -48,7 +48,7 @@ class ObjCMigrateASTConsumer : public ASTConsumer {
                                   const ObjCImplementationDecl *ImpDecl);
   void migrateNSEnumDecl(ASTContext &Ctx, const EnumDecl *EnumDcl,
                      const TypedefDecl *TypedefDcl);
-  void migrateMethods(ASTContext &Ctx, ObjCContainerDecl *CDecl);
+  void migrateAllMethodInstaceType(ASTContext &Ctx, ObjCContainerDecl *CDecl);
   void migrateMethodInstanceType(ASTContext &Ctx, ObjCContainerDecl *CDecl,
                                  ObjCMethodDecl *OM);
   bool migrateProperty(ASTContext &Ctx, ObjCContainerDecl *D, ObjCMethodDecl *OM);
@@ -335,12 +335,14 @@ void ObjCMigrateASTConsumer::migrateObjCInterfaceDecl(ASTContext &Ctx,
     if (Method->isDeprecated())
       continue;
     migrateProperty(Ctx, D, Method);
-    migrateNsReturnsInnerPointer(Ctx, Method);
+    if (ASTMigrateActions & FrontendOptions::ObjCMT_Annotation)
+      migrateNsReturnsInnerPointer(Ctx, Method);
   }
   for (ObjCContainerDecl::prop_iterator P = D->prop_begin(),
        E = D->prop_end(); P != E; ++P) {
     ObjCPropertyDecl *Prop = *P;
-    if (!P->isDeprecated())
+    if ((ASTMigrateActions & FrontendOptions::ObjCMT_Annotation) &&
+        !P->isDeprecated())
       migratePropertyNsReturnsInnerPointer(Ctx, Prop);
   }
 }
@@ -806,6 +808,8 @@ bool ObjCMigrateASTConsumer::migrateProperty(ASTContext &Ctx,
   }
   
   if (SetterMethod) {
+    if ((ASTMigrateActions & FrontendOptions::ObjCMT_ReadwriteProperty) == 0)
+      return false;
     if (SetterMethod->isDeprecated() ||
         !AttributesMatch(Method, SetterMethod))
       return false;
@@ -865,7 +869,7 @@ void ObjCMigrateASTConsumer::migratePropertyNsReturnsInnerPointer(ASTContext &Ct
   Editor->commit(commit);
 }
 
-void ObjCMigrateASTConsumer::migrateMethods(ASTContext &Ctx,
+void ObjCMigrateASTConsumer::migrateAllMethodInstaceType(ASTContext &Ctx,
                                                  ObjCContainerDecl *CDecl) {
   if (CDecl->isDeprecated())
     return;
@@ -1324,14 +1328,16 @@ IsReallyASystemHeader(ASTContext &Ctx, const FileEntry *file, FileID FID) {
 void ObjCMigrateASTConsumer::HandleTranslationUnit(ASTContext &Ctx) {
   
   TranslationUnitDecl *TU = Ctx.getTranslationUnitDecl();
-  if (ASTMigrateActions & FrontendOptions::ObjCMT_Property) {
+  if (ASTMigrateActions & FrontendOptions::ObjCMT_MigrateDecls) {
     for (DeclContext::decl_iterator D = TU->decls_begin(), DEnd = TU->decls_end();
          D != DEnd; ++D) {
       if (unsigned FID =
             PP.getSourceManager().getFileID((*D)->getLocation()).getHashValue())
-        if (FileId && FileId != FID)
-          AnnotateImplicitBridging(Ctx);
-          
+        if (FileId && FileId != FID) {
+          if (ASTMigrateActions & FrontendOptions::ObjCMT_Annotation)
+            AnnotateImplicitBridging(Ctx);
+        }
+      
       if (ObjCInterfaceDecl *CDecl = dyn_cast<ObjCInterfaceDecl>(*D))
         migrateObjCInterfaceDecl(Ctx, CDecl);
       if (ObjCCategoryDecl *CatDecl = dyn_cast<ObjCCategoryDecl>(*D))
@@ -1339,26 +1345,35 @@ void ObjCMigrateASTConsumer::HandleTranslationUnit(ASTContext &Ctx) {
       else if (ObjCProtocolDecl *PDecl = dyn_cast<ObjCProtocolDecl>(*D))
         ObjCProtocolDecls.insert(PDecl);
       else if (const ObjCImplementationDecl *ImpDecl =
-               dyn_cast<ObjCImplementationDecl>(*D))
-        migrateProtocolConformance(Ctx, ImpDecl);
+               dyn_cast<ObjCImplementationDecl>(*D)) {
+        if (ASTMigrateActions & FrontendOptions::ObjCMT_ProtocolConformance)
+          migrateProtocolConformance(Ctx, ImpDecl);
+      }
       else if (const EnumDecl *ED = dyn_cast<EnumDecl>(*D)) {
         DeclContext::decl_iterator N = D;
         ++N;
         if (N != DEnd)
-          if (const TypedefDecl *TD = dyn_cast<TypedefDecl>(*N))
-            migrateNSEnumDecl(Ctx, ED, TD);
+          if (const TypedefDecl *TD = dyn_cast<TypedefDecl>(*N)) {
+            if (ASTMigrateActions & FrontendOptions::ObjCMT_NsMacros)
+              migrateNSEnumDecl(Ctx, ED, TD);
+          }
       }
-      else if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(*D))
-        migrateCFAnnotation(Ctx, FD);
+      else if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(*D)) {
+        if (ASTMigrateActions & FrontendOptions::ObjCMT_Annotation)
+          migrateCFAnnotation(Ctx, FD);
+      }
       
       if (ObjCContainerDecl *CDecl = dyn_cast<ObjCContainerDecl>(*D)) {
         // migrate methods which can have instancetype as their result type.
-        migrateMethods(Ctx, CDecl);
+        if (ASTMigrateActions & FrontendOptions::ObjCMT_Instancetype)
+          migrateAllMethodInstaceType(Ctx, CDecl);
         // annotate methods with CF annotations.
-        migrateARCSafeAnnotation(Ctx, CDecl);
+        if (ASTMigrateActions & FrontendOptions::ObjCMT_Annotation)
+          migrateARCSafeAnnotation(Ctx, CDecl);
       }
     }
-    AnnotateImplicitBridging(Ctx);
+    if (ASTMigrateActions & FrontendOptions::ObjCMT_Annotation)
+      AnnotateImplicitBridging(Ctx);
   }
   
   Rewriter rewriter(Ctx.getSourceManager(), Ctx.getLangOpts());
@@ -1402,7 +1417,7 @@ ASTConsumer *MigrateSourceAction::CreateASTConsumer(CompilerInstance &CI,
     PPRec = new PPConditionalDirectiveRecord(CI.getSourceManager());
   CI.getPreprocessor().addPPCallbacks(PPRec);
   return new ObjCMigrateASTConsumer(CI.getFrontendOpts().OutputFile,
-                                    FrontendOptions::ObjCMT_All,
+                                    FrontendOptions::ObjCMT_MigrateAll,
                                     Remapper,
                                     CI.getFileManager(),
                                     PPRec,
