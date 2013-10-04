@@ -1657,6 +1657,39 @@ Value *CodeGenFunction::EmitNeonShiftVector(Value *V, llvm::Type *Ty,
   return llvm::ConstantVector::getSplat(VTy->getNumElements(), C);
 }
 
+// \brief Right-shift a vector by a constant.
+Value *CodeGenFunction::EmitNeonRShiftImm(Value *Vec, Value *Shift,
+                                          llvm::Type *Ty, bool usgn,
+                                          const char *name) {
+  llvm::VectorType *VTy = cast<llvm::VectorType>(Ty);
+
+  int ShiftAmt = cast<ConstantInt>(Shift)->getSExtValue();
+  int EltSize = VTy->getScalarSizeInBits();
+
+  Vec = Builder.CreateBitCast(Vec, Ty);
+
+  // lshr/ashr are undefined when the shift amount is equal to the vector
+  // element size.
+  if (ShiftAmt == EltSize) {
+    if (usgn) {
+      // Right-shifting an unsigned value by its size yields 0.
+      llvm::Constant *Zero = ConstantInt::get(VTy->getElementType(), 0);
+      return llvm::ConstantVector::getSplat(VTy->getNumElements(), Zero);
+    } else {
+      // Right-shifting a signed value by its size is equivalent
+      // to a shift of size-1.
+      --ShiftAmt;
+      Shift = ConstantInt::get(VTy->getElementType(), ShiftAmt);
+    }
+  }
+
+  Shift = EmitNeonShiftVector(Shift, Ty, false);
+  if (usgn)
+    return Builder.CreateLShr(Vec, Shift, name);
+  else
+    return Builder.CreateAShr(Vec, Shift, name);
+}
+
 /// GetPointeeAlignment - Given an expression with a pointer type, find the
 /// alignment of the type referenced by the pointer.  Skip over implicit
 /// casts.
@@ -2222,6 +2255,46 @@ Value *CodeGenFunction::EmitAArch64BuiltinExpr(unsigned BuiltinID,
   }
 
   // AArch64-only builtins
+  case AArch64::BI__builtin_neon_vfma_lane_v:
+  case AArch64::BI__builtin_neon_vfmaq_laneq_v: {
+    Value *F = CGM.getIntrinsic(Intrinsic::fma, Ty);
+    Ops[0] = Builder.CreateBitCast(Ops[0], Ty);
+    Ops[1] = Builder.CreateBitCast(Ops[1], Ty);
+
+    Ops[2] = Builder.CreateBitCast(Ops[2], Ty);
+    Ops[2] = EmitNeonSplat(Ops[2], cast<ConstantInt>(Ops[3]));
+    return Builder.CreateCall3(F, Ops[2], Ops[1], Ops[0]);
+  }
+  case AArch64::BI__builtin_neon_vfmaq_lane_v: {
+    Value *F = CGM.getIntrinsic(Intrinsic::fma, Ty);
+    Ops[0] = Builder.CreateBitCast(Ops[0], Ty);
+    Ops[1] = Builder.CreateBitCast(Ops[1], Ty);
+
+    llvm::VectorType *VTy = cast<llvm::VectorType>(Ty);
+    llvm::Type *STy = llvm::VectorType::get(VTy->getElementType(),
+                                            VTy->getNumElements() / 2);
+    Ops[2] = Builder.CreateBitCast(Ops[2], STy);
+    Value* SV = llvm::ConstantVector::getSplat(VTy->getNumElements(),
+                                               cast<ConstantInt>(Ops[3]));
+    Ops[2] = Builder.CreateShuffleVector(Ops[2], Ops[2], SV, "lane");
+
+    return Builder.CreateCall3(F, Ops[2], Ops[1], Ops[0]);
+  }
+  case AArch64::BI__builtin_neon_vfma_laneq_v: {
+    Value *F = CGM.getIntrinsic(Intrinsic::fma, Ty);
+    Ops[0] = Builder.CreateBitCast(Ops[0], Ty);
+    Ops[1] = Builder.CreateBitCast(Ops[1], Ty);
+
+    llvm::VectorType *VTy = cast<llvm::VectorType>(Ty);
+    llvm::Type *STy = llvm::VectorType::get(VTy->getElementType(),
+                                            VTy->getNumElements() * 2);
+    Ops[2] = Builder.CreateBitCast(Ops[2], STy);
+    Value* SV = llvm::ConstantVector::getSplat(VTy->getNumElements(),
+                                               cast<ConstantInt>(Ops[3]));
+    Ops[2] = Builder.CreateShuffleVector(Ops[2], Ops[2], SV, "lane");
+
+    return Builder.CreateCall3(F, Ops[2], Ops[1], Ops[0]);
+  }
   case AArch64::BI__builtin_neon_vfms_v:
   case AArch64::BI__builtin_neon_vfmsq_v: {
     Value *F = CGM.getIntrinsic(Intrinsic::fma, Ty);
@@ -3085,12 +3158,7 @@ Value *CodeGenFunction::EmitARMBuiltinExpr(unsigned BuiltinID,
                         Ops, "vshrn_n", 1, true);
   case ARM::BI__builtin_neon_vshr_n_v:
   case ARM::BI__builtin_neon_vshrq_n_v:
-    Ops[0] = Builder.CreateBitCast(Ops[0], Ty);
-    Ops[1] = EmitNeonShiftVector(Ops[1], Ty, false);
-    if (usgn)
-      return Builder.CreateLShr(Ops[0], Ops[1], "vshr_n");
-    else
-      return Builder.CreateAShr(Ops[0], Ops[1], "vshr_n");
+    return EmitNeonRShiftImm(Ops[0], Ops[1], Ty, usgn, "vshr_n");
   case ARM::BI__builtin_neon_vsri_n_v:
   case ARM::BI__builtin_neon_vsriq_n_v:
     rightShift = true;
@@ -3102,12 +3170,7 @@ Value *CodeGenFunction::EmitARMBuiltinExpr(unsigned BuiltinID,
   case ARM::BI__builtin_neon_vsra_n_v:
   case ARM::BI__builtin_neon_vsraq_n_v:
     Ops[0] = Builder.CreateBitCast(Ops[0], Ty);
-    Ops[1] = Builder.CreateBitCast(Ops[1], Ty);
-    Ops[2] = EmitNeonShiftVector(Ops[2], Ty, false);
-    if (usgn)
-      Ops[1] = Builder.CreateLShr(Ops[1], Ops[2], "vsra_n");
-    else
-      Ops[1] = Builder.CreateAShr(Ops[1], Ops[2], "vsra_n");
+    Ops[1] = EmitNeonRShiftImm(Ops[1], Ops[2], Ty, usgn, "vsra_n");
     return Builder.CreateAdd(Ops[0], Ops[1]);
   case ARM::BI__builtin_neon_vst1_v:
   case ARM::BI__builtin_neon_vst1q_v:
