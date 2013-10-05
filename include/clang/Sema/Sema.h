@@ -372,11 +372,6 @@ public:
   /// cycle detection at the end of the TU.
   DelegatingCtorDeclsType DelegatingCtorDecls;
 
-  /// \brief All the destructors seen during a class definition that had their
-  /// exception spec computation delayed because it depended on an unparsed
-  /// exception spec.
-  SmallVector<CXXDestructorDecl*, 2> DelayedDestructorExceptionSpecs;
-
   /// \brief All the overriding destructors seen during a class definition
   /// (there could be multiple due to nested classes) that had their exception
   /// spec checks delayed, plus the overridden destructor.
@@ -6645,7 +6640,8 @@ public:
 
   void DiagnosePropertyMismatch(ObjCPropertyDecl *Property,
                                 ObjCPropertyDecl *SuperProperty,
-                                const IdentifierInfo *Name);
+                                const IdentifierInfo *Name,
+                                bool OverridingProtocolProperty);
 
   void DiagnoseClassExtensionDupMethods(ObjCCategoryDecl *CAT,
                                         ObjCInterfaceDecl *ID);
