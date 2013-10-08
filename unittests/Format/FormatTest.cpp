@@ -1530,6 +1530,11 @@ TEST_F(FormatTest, FormatsClasses) {
                "  int i;\n"
                "};",
                getLLVMStyleWithColumns(32));
+  verifyFormat("struct aaaaaaaaaaaaa : public aaaaaaaaaaaaaaaaaaa< // break\n"
+               "                           aaaaaaaaaaaaaaaa> {};");
+  verifyFormat("struct aaaaaaaaaaaaaaaaaaaa\n"
+               "    : public aaaaaaaaaaaaaaaaaaa<aaaaaaaaaaaaaaaaaaaaa,\n"
+               "                                 aaaaaaaaaaaaaaaaaaaaaa> {};");
 }
 
 TEST_F(FormatTest, FormatsVariableDeclarationsAfterStructOrClass) {
@@ -6586,6 +6591,20 @@ TEST_F(FormatTest, ConstructorInitializerIndentWidth) {
                ": a(a)\n"
                ", b(b)\n"
                ", c(c) {}",
+               Style);
+
+  Style.ConstructorInitializerAllOnOneLineOrOnePerLine = true;
+  Style.ConstructorInitializerIndentWidth = 4;
+  verifyFormat(
+      "SomeClass::Constructor()\n"
+      "    : aaaaaaaa(aaaaaaaa), aaaaaaaa(aaaaaaaa), aaaaaaaa(aaaaaaaa) {}",
+      Style);
+  Style.ConstructorInitializerIndentWidth = 4;
+  Style.ColumnLimit = 60;
+  verifyFormat("SomeClass::Constructor()\n"
+               "    : aaaaaaaa(aaaaaaaa)\n"
+               "    , aaaaaaaa(aaaaaaaa)\n"
+               "    , aaaaaaaa(aaaaaaaa) {}",
                Style);
 }
 
