@@ -74,8 +74,6 @@ def m_hexagon_Features_Group  : OptionGroup<"<m hexagon features group>">, Group
 def m_arm_Features_Group  : OptionGroup<"<m arm features group>">, Group<m_Group>;
 def opencl_Group          : OptionGroup<"<opencl group>">;
 def u_Group               : OptionGroup<"<u group>">;
-def mips_CPUs_Group       : OptionGroup<"<MIPS CPU aliases group>">,
-  Group<CompileOnly_Group>;
 
 def pedantic_Group        : OptionGroup<"<pedantic group>">,
   Group<CompileOnly_Group>;
@@ -179,6 +177,9 @@ def objcmt_migrate_nsmacros : Flag<["-"], "objcmt-migrate-ns-macros">, Flags<[CC
   HelpText<"Enable migration to NS_ENUM/NS_OPTIONS macros">;
 def objcmt_migrate_protocol_conformance : Flag<["-"], "objcmt-migrate-protocol-conformance">, Flags<[CC1Option]>,
   HelpText<"Enable migration to add protocol conformance on classes">;
+def objcmt_atomic_property : Flag<["-"], "objcmt-atomic-property">,
+  Flags<[CC1Option]>,
+  HelpText<"Make migration to 'atomic' properties">;
 // Make sure all other -ccc- options are rejected.
 def ccc_ : Joined<["-"], "ccc-">, Group<internal_Group>, Flags<[Unsupported]>;
 
@@ -1087,13 +1088,17 @@ def mmsa : Flag<["-"], "mmsa">, Group<m_Group>,
 def mno_msa : Flag<["-"], "mno-msa">, Group<m_Group>,
   HelpText<"Disable MSA ASE on MIPS processors">, Flags<[HelpHidden]>;
 def mnan_EQ : Joined<["-"], "mnan=">, Group<m_Group>;
-def mips32 : Flag<["-"], "mips32">, Group<mips_CPUs_Group>,
+def mips32 : Flag<["-"], "mips32">,
+  Alias<march_EQ>, AliasArgs<["mips32"]>,
   HelpText<"Equivalent to -march=mips32">, Flags<[HelpHidden]>;
-def mips32r2 : Flag<["-"], "mips32r2">, Group<mips_CPUs_Group>,
+def mips32r2 : Flag<["-"], "mips32r2">,
+  Alias<march_EQ>, AliasArgs<["mips32r2"]>,
   HelpText<"Equivalent to -march=mips32r2">, Flags<[HelpHidden]>;
-def mips64 : Flag<["-"], "mips64">, Group<mips_CPUs_Group>,
+def mips64 : Flag<["-"], "mips64">,
+  Alias<march_EQ>, AliasArgs<["mips64"]>,
   HelpText<"Equivalent to -march=mips64">, Flags<[HelpHidden]>;
-def mips64r2 : Flag<["-"], "mips64r2">, Group<mips_CPUs_Group>,
+def mips64r2 : Flag<["-"], "mips64r2">,
+  Alias<march_EQ>, AliasArgs<["mips64r2"]>,
   HelpText<"Equivalent to -march=mips64r2">, Flags<[HelpHidden]>;
 def module_file_info : Flag<["-"], "module-file-info">, Flags<[DriverOption,CC1Option]>, Group<Action_Group>;
 def mthumb : Flag<["-"], "mthumb">, Group<m_Group>;

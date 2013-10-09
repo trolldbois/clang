@@ -1294,6 +1294,13 @@ static bool isMips16(const ArgList &Args) {
   return A && A->getOption().matches(options::OPT_mips16);
 }
 
+static bool isMips32r2(const ArgList &Args) {
+  Arg *A = Args.getLastArg(options::OPT_march_EQ,
+                           options::OPT_mcpu_EQ);
+
+  return A && A->getValue() == StringRef("mips32r2");
+}
+
 static bool isMicroMips(const ArgList &Args) {
   Arg *A = Args.getLastArg(options::OPT_mmicromips,
                            options::OPT_mno_micromips);
@@ -2174,25 +2181,6 @@ static void addPathIfExists(Twine Path, ToolChain::path_list &Paths) {
   if (llvm::sys::fs::exists(Path)) Paths.push_back(Path.str());
 }
 
-static bool isMipsR2Arch(llvm::Triple::ArchType Arch,
-                         const ArgList &Args) {
-  if (Arch != llvm::Triple::mips &&
-      Arch != llvm::Triple::mipsel)
-    return false;
-
-  Arg *A = Args.getLastArg(options::OPT_march_EQ,
-                           options::OPT_mcpu_EQ,
-                           options::OPT_mips_CPUs_Group);
-
-  if (!A)
-    return false;
-
-  if (A->getOption().matches(options::OPT_mips_CPUs_Group))
-    return A->getOption().matches(options::OPT_mips32r2);
-
-  return A->getValue() == StringRef("mips32r2");
-}
-
 static StringRef getMultilibDir(const llvm::Triple &Triple,
                                 const ArgList &Args) {
   if (!isMipsArch(Triple.getArch()))
@@ -2288,7 +2276,7 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
     // the parent prefix of the GCC installation.
     // FIXME: It would be cleaner to model this as a variant of multilib. IE,
     // instead of 'lib64' it would be 'lib/el'.
-    if (IsAndroid && isMipsR2Arch(Triple.getArch(), Args)) {
+    if (IsAndroid && IsMips && isMips32r2(Args)) {
       assert(GCCInstallation.getBiarchSuffix().empty() &&
              "Unexpected bi-arch suffix");
       addPathIfExists(GCCInstallation.getInstallPath() + "/mips-r2", Paths);
