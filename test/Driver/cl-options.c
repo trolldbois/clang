@@ -122,11 +122,16 @@
 // RUN: %clang_cl /Zs /ofoo.obj /o foo.obj -- %s 2>&1
 // RUN: %clang_cl /Zs /wfoo /Zc:wchar_t- -- %s 2>&1
 // RUN: %clang_cl /Zs /ZI /Zi /MP -- %s 2>&1
+// RUN: %clang_cl /Zs /FA /FAc /FAs /FAu /Fafilename -- %s 2>&1
 
 
 // We support -Xclang for forwarding options to cc1.
 // RUN: %clang_cl -Xclang hellocc1 -### -- %s 2>&1 | FileCheck -check-prefix=Xclang %s
 // Xclang: "-cc1"
 // Xclang: "hellocc1"
+
+// We support -m32 and -m64.
+// RUN: %clang_cl /Zs /WX -m32 -m64 -- %s
+
 
 void f() { }

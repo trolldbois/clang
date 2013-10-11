@@ -510,9 +510,14 @@ static bool rewriteToNSEnumDecl(const EnumDecl *EnumDcl,
   SourceRange R(EnumDcl->getLocStart(), EnumDcl->getLocStart());
   commit.replace(R, ClassString);
   SourceLocation EndOfTypedefLoc = TypedefDcl->getLocEnd();
-  EndOfTypedefLoc = trans::findLocationAfterSemi(EndOfTypedefLoc, NS.getASTContext());
+  EndOfTypedefLoc = trans::findLocationAfterSemi(EndOfTypedefLoc, NS.getASTContext(),
+                                                 /*IsDecl*/true);
+  SourceLocation BeginOfTypedefLoc = TypedefDcl->getLocStart();
   if (!EndOfTypedefLoc.isInvalid()) {
-    commit.remove(SourceRange(TypedefDcl->getLocStart(), EndOfTypedefLoc));
+    // FIXME. This assumes that typedef decl; is immediately preceeded by eoln.
+    // It is trying to remove the typedef decl. line entirely.
+    BeginOfTypedefLoc = BeginOfTypedefLoc.getLocWithOffset(-1);
+    commit.remove(SourceRange(BeginOfTypedefLoc, EndOfTypedefLoc));
     return true;
   }
   return false;
