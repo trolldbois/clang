@@ -408,8 +408,9 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
     assert(CI);
     uint64_t val = CI->getZExtValue();
     CI = ConstantInt::get(Builder.getInt1Ty(), (val & 0x2) >> 1);
-
-    Value *F = CGM.getIntrinsic(Intrinsic::objectsize, ResType);
+    // FIXME: Get right address space.
+    llvm::Type *Tys[] = { ResType, Builder.getInt8PtrTy(0) };
+    Value *F = CGM.getIntrinsic(Intrinsic::objectsize, Tys);
     return RValue::get(Builder.CreateCall2(F, EmitScalarExpr(E->getArg(0)),CI));
   }
   case Builtin::BI__builtin_prefetch: {
@@ -1945,6 +1946,60 @@ static Value *EmitAArch64ScalarBuiltinExpr(CodeGenFunction &CGF,
   case AArch64::BI__builtin_neon_vminnmvq_f32:
     Int = Intrinsic::aarch64_neon_vminnmv;
     AcrossVec = true; ExtendEle = false; s = "vminnmv"; break;
+  // Scalar Integer Saturating Doubling Multiply Half High
+  case AArch64::BI__builtin_neon_vqdmulhh_s16:
+  case AArch64::BI__builtin_neon_vqdmulhs_s32:
+    Int = Intrinsic::arm_neon_vqdmulh;
+    s = "vqdmulh"; OverloadInt = true; break;
+  // Scalar Integer Saturating Rounding Doubling Multiply Half High
+  case AArch64::BI__builtin_neon_vqrdmulhh_s16:
+  case AArch64::BI__builtin_neon_vqrdmulhs_s32:
+    Int = Intrinsic::arm_neon_vqrdmulh;
+    s = "vqrdmulh"; OverloadInt = true; break;
+  // Scalar Floating-point Multiply Extended
+  case AArch64::BI__builtin_neon_vmulxs_f32:
+  case AArch64::BI__builtin_neon_vmulxd_f64:
+    Int = Intrinsic::aarch64_neon_vmulx;
+    s = "vmulx"; OverloadInt = true; break;
+  // Scalar Floating-point Reciprocal Step and
+  case AArch64::BI__builtin_neon_vrecpss_f32:
+  case AArch64::BI__builtin_neon_vrecpsd_f64:
+    Int = Intrinsic::arm_neon_vrecps;
+    s = "vrecps"; OverloadInt = true; break;
+  // Scalar Floating-point Reciprocal Square Root Step
+  case AArch64::BI__builtin_neon_vrsqrtss_f32:
+  case AArch64::BI__builtin_neon_vrsqrtsd_f64:
+    Int = Intrinsic::arm_neon_vrsqrts;
+    s = "vrsqrts"; OverloadInt = true; break;
+  // Scalar Signed Integer Convert To Floating-point
+  case AArch64::BI__builtin_neon_vcvts_f32_s32:
+    Int = Intrinsic::aarch64_neon_vcvtf32_s32,
+    s = "vcvtf"; OverloadInt = false; break;
+  case AArch64::BI__builtin_neon_vcvtd_f64_s64:
+    Int = Intrinsic::aarch64_neon_vcvtf64_s64,
+    s = "vcvtf"; OverloadInt = false; break;
+  // Scalar Unsigned Integer Convert To Floating-point
+  case AArch64::BI__builtin_neon_vcvts_f32_u32:
+    Int = Intrinsic::aarch64_neon_vcvtf32_u32,
+    s = "vcvtf"; OverloadInt = false; break;
+  case AArch64::BI__builtin_neon_vcvtd_f64_u64:
+    Int = Intrinsic::aarch64_neon_vcvtf64_u64,
+    s = "vcvtf"; OverloadInt = false; break;
+  // Scalar Floating-point Reciprocal Estimate
+  case AArch64::BI__builtin_neon_vrecpes_f32:
+  case AArch64::BI__builtin_neon_vrecped_f64:
+    Int = Intrinsic::arm_neon_vrecpe;
+    s = "vrecpe"; OverloadInt = true; break;
+  // Scalar Floating-point Reciprocal Exponent
+  case AArch64::BI__builtin_neon_vrecpxs_f32:
+  case AArch64::BI__builtin_neon_vrecpxd_f64:
+    Int = Intrinsic::aarch64_neon_vrecpx;
+    s = "vrecpx"; OverloadInt = true; break;
+  // Scalar Floating-point Reciprocal Square Root Estimate
+  case AArch64::BI__builtin_neon_vrsqrtes_f32:
+  case AArch64::BI__builtin_neon_vrsqrted_f64:
+    Int = Intrinsic::arm_neon_vrsqrte;
+    s = "vrsqrte"; OverloadInt = true; break;
   }
 
   if (!Int)
@@ -2018,6 +2073,34 @@ Value *CodeGenFunction::EmitAArch64BuiltinExpr(unsigned BuiltinID,
   SmallVector<Value *, 4> Ops;
   for (unsigned i = 0, e = E->getNumArgs() - 1; i != e; i++) {
     Ops.push_back(EmitScalarExpr(E->getArg(i)));
+  }
+//  Some intrinsic isn't overloaded.
+  switch (BuiltinID) {
+  default: break;
+  case AArch64::BI__builtin_neon_vget_lane_i8:
+  case AArch64::BI__builtin_neon_vget_lane_i16:
+  case AArch64::BI__builtin_neon_vget_lane_i32:
+  case AArch64::BI__builtin_neon_vget_lane_i64:
+  case AArch64::BI__builtin_neon_vgetq_lane_i8:
+  case AArch64::BI__builtin_neon_vgetq_lane_i16:
+  case AArch64::BI__builtin_neon_vgetq_lane_i32:
+  case AArch64::BI__builtin_neon_vgetq_lane_i64:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vget_lane_i8, E);
+  case AArch64::BI__builtin_neon_vset_lane_i8:
+  case AArch64::BI__builtin_neon_vset_lane_i16:
+  case AArch64::BI__builtin_neon_vset_lane_i32:
+  case AArch64::BI__builtin_neon_vset_lane_i64:
+  case AArch64::BI__builtin_neon_vset_lane_f16:
+  case AArch64::BI__builtin_neon_vset_lane_f32:
+  case AArch64::BI__builtin_neon_vset_lane_f64:
+  case AArch64::BI__builtin_neon_vsetq_lane_i8:
+  case AArch64::BI__builtin_neon_vsetq_lane_i16:
+  case AArch64::BI__builtin_neon_vsetq_lane_i32:
+  case AArch64::BI__builtin_neon_vsetq_lane_i64:
+  case AArch64::BI__builtin_neon_vsetq_lane_f16:
+  case AArch64::BI__builtin_neon_vsetq_lane_f32:
+  case AArch64::BI__builtin_neon_vsetq_lane_f64:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vset_lane_i8, E);
   }
 
   // Get the last argument, which specifies the vector type.
@@ -2289,6 +2372,40 @@ Value *CodeGenFunction::EmitAArch64BuiltinExpr(unsigned BuiltinID,
     Function *F = CGM.getIntrinsic(Int, Tys);
     return EmitNeonCall(F, Ops, "vcvt_n");
   }
+
+  // Load/Store
+  case AArch64::BI__builtin_neon_vld1_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vld1_v, E);
+  case AArch64::BI__builtin_neon_vld1q_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vld1q_v, E);
+  case AArch64::BI__builtin_neon_vld2_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vld2_v, E);
+  case AArch64::BI__builtin_neon_vld2q_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vld2q_v, E);
+  case AArch64::BI__builtin_neon_vld3_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vld3_v, E);
+  case AArch64::BI__builtin_neon_vld3q_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vld3q_v, E);
+  case AArch64::BI__builtin_neon_vld4_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vld4_v, E);
+  case AArch64::BI__builtin_neon_vld4q_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vld4q_v, E);
+  case AArch64::BI__builtin_neon_vst1_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vst1_v, E);
+  case AArch64::BI__builtin_neon_vst1q_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vst1q_v, E);
+  case AArch64::BI__builtin_neon_vst2_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vst2_v, E);
+  case AArch64::BI__builtin_neon_vst2q_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vst2q_v, E);
+  case AArch64::BI__builtin_neon_vst3_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vst3_v, E);
+  case AArch64::BI__builtin_neon_vst3q_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vst3q_v, E);
+  case AArch64::BI__builtin_neon_vst4_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vst4_v, E);
+  case AArch64::BI__builtin_neon_vst4q_v:
+    return EmitARMBuiltinExpr(ARM::BI__builtin_neon_vst4q_v, E);
 
   // AArch64-only builtins
   case AArch64::BI__builtin_neon_vfma_lane_v:
