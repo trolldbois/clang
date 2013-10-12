@@ -463,6 +463,7 @@ def warn_pragma_pack_show : Warning<"value of #pragma pack(show) == %0">;
 def warn_pragma_pack_pop_identifer_and_alignment : Warning<
   "specifying both a name and alignment to 'pop' is undefined">;
 def warn_pragma_pack_pop_failed : Warning<"#pragma pack(pop, ...) failed: %0">;
+def warn_pragma_ms_struct_failed : Warning<"#pramga ms_struct can not be used with dynamic classes or structures">, InGroup<IgnoredAttributes>;
 
 def warn_pragma_unused_undeclared_var : Warning<
   "undeclared variable %0 used as an argument for '#pragma unused'">;
@@ -1622,6 +1623,9 @@ def note_in_for_range: Note<
 def err_for_range_invalid: Error<
   "invalid range expression of type %0; no viable '%select{begin|end}1' "
   "function available">;
+def err_range_on_array_parameter : Error<
+  "cannot build range expression with array function parameter %0 since "
+  "parameter with array type %1 is treated as pointer type %2">;
 def err_for_range_dereference : Error<
   "invalid range expression of type %0; did you mean to dereference it "
   "with '*'?">;
@@ -2212,17 +2216,14 @@ def warn_attr_on_unconsumable_class : Warning<
 def warn_return_typestate_for_unconsumable_type : Warning<
   "return state set for an unconsumable type '%0'">, InGroup<Consumed>,
   DefaultIgnore;
+def warn_unknown_consumed_state : Warning<
+   "unknown consumed analysis state '%0'">, InGroup<Consumed>, DefaultIgnore;
 def warn_return_typestate_mismatch : Warning<
   "return value not in expected state; expected '%0', observed '%1'">,
   InGroup<Consumed>, DefaultIgnore;
 def warn_loop_state_mismatch : Warning<
   "state of variable '%0' must match at the entry and exit of loop">,
   InGroup<Consumed>, DefaultIgnore;
-
-// ConsumedStrict warnings
-def warn_unnecessary_test : Warning<
-  "unnecessary test. Variable '%0' is known to be in the '%1' state">,
-  InGroup<ConsumedStrict>, DefaultIgnore;
 
 def warn_impcast_vector_scalar : Warning<
   "implicit conversion turns vector to scalar: %0 to %1">,
