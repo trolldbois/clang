@@ -345,7 +345,7 @@ struct a {
         tu = get_tu(source, flags=flags)
         teststruct = get_cursor(tu, 'a')
         fields = list(teststruct.get_children())
-        
+
         assert teststruct.type.get_align() == align
         assert teststruct.type.get_size() == total
         assert teststruct.type.get_offset(fields[0].spelling) == a1
