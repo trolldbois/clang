@@ -372,11 +372,6 @@ public:
   /// cycle detection at the end of the TU.
   DelegatingCtorDeclsType DelegatingCtorDecls;
 
-  /// \brief All the destructors seen during a class definition that had their
-  /// exception spec computation delayed because it depended on an unparsed
-  /// exception spec.
-  SmallVector<CXXDestructorDecl*, 2> DelayedDestructorExceptionSpecs;
-
   /// \brief All the overriding destructors seen during a class definition
   /// (there could be multiple due to nested classes) that had their exception
   /// spec checks delayed, plus the overridden destructor.
@@ -2405,7 +2400,11 @@ public:
     /// \brief The lookup found an overload set of literal operator templates,
     /// which expect the characters of the spelling of the literal token to be
     /// passed as a non-type template argument pack.
-    LOLR_Template
+    LOLR_Template,
+    /// \brief The lookup found an overload set of literal operator templates,
+    /// which expect the character type and characters of the spelling of the
+    /// string literal token to be passed as template arguments.
+    LOLR_StringTemplate
   };
 
   SpecialMemberOverloadResult *LookupSpecialMember(CXXRecordDecl *D,
@@ -2472,7 +2471,9 @@ public:
 
   LiteralOperatorLookupResult LookupLiteralOperator(Scope *S, LookupResult &R,
                                                     ArrayRef<QualType> ArgTys,
-                                                    bool AllowRawAndTemplate);
+                                                    bool AllowRaw,
+                                                    bool AllowTemplate,
+                                                    bool AllowStringTemplate);
   bool isKnownName(StringRef name);
 
   void ArgumentDependentLookup(DeclarationName Name, bool Operator,
@@ -2543,12 +2544,16 @@ public:
   bool CheckCallingConvAttr(const AttributeList &attr, CallingConv &CC, 
                             const FunctionDecl *FD = 0);
   bool CheckNoReturnAttr(const AttributeList &attr);
+  bool checkStringLiteralArgumentAttr(const AttributeList &Attr,
+                                      unsigned ArgNum, StringRef &Str,
+                                      SourceLocation *ArgLocation = 0);
+
   void CheckAlignasUnderalignment(Decl *D);
 
   /// Adjust the calling convention of a method to be the ABI default if it
   /// wasn't specified explicitly.  This handles method types formed from
   /// function type typedefs and typename template arguments.
-  void adjustMemberFunctionCC(QualType &T);
+  void adjustMemberFunctionCC(QualType &T, bool IsStatic);
 
   /// Get the outermost AttributedType node that sets a calling convention.
   /// Valid types should not have multiple attributes with different CCs.
@@ -4133,12 +4138,16 @@ public:
                               bool Diagnose = true);
   void DeclareGlobalNewDelete();
   void DeclareGlobalAllocationFunction(DeclarationName Name, QualType Return,
-                                       QualType Argument,
+                                       QualType Param1,
+                                       QualType Param2 = QualType(),
                                        bool addMallocAttr = false);
 
   bool FindDeallocationFunction(SourceLocation StartLoc, CXXRecordDecl *RD,
                                 DeclarationName Name, FunctionDecl* &Operator,
                                 bool Diagnose = true);
+  FunctionDecl *FindUsualDeallocationFunction(SourceLocation StartLoc,
+                                              bool CanProvideSize,
+                                              DeclarationName Name);
 
   /// ActOnCXXDelete - Parsed a C++ 'delete' expression
   ExprResult ActOnCXXDelete(SourceLocation StartLoc,
@@ -4458,10 +4467,13 @@ public:
                         bool ExplicitResultType,
                         bool Mutable);
 
-  /// \brief Check and build an init-capture with the specified name and
-  /// initializer.
-  FieldDecl *checkInitCapture(SourceLocation Loc, bool ByRef,
-                              IdentifierInfo *Id, Expr *Init);
+  /// \brief Check an init-capture and build the implied variable declaration
+  /// with the specified name and initializer.
+  VarDecl *checkInitCapture(SourceLocation Loc, bool ByRef,
+                            IdentifierInfo *Id, Expr *Init);
+
+  /// \brief Build the implicit field for an init-capture.
+  FieldDecl *buildInitCaptureField(sema::LambdaScopeInfo *LSI, VarDecl *Var);
 
   /// \brief Note that we have finished the explicit captures for the
   /// given lambda.
@@ -4889,7 +4901,7 @@ public:
   AccessResult CheckFriendAccess(NamedDecl *D);
   AccessResult CheckMemberAccess(SourceLocation UseLoc,
                                  CXXRecordDecl *NamingClass,
-                                 NamedDecl *D);
+                                 DeclAccessPair Found);
   AccessResult CheckMemberOperatorAccess(SourceLocation Loc,
                                          Expr *ObjectExpr,
                                          Expr *ArgExpr,
@@ -6209,7 +6221,7 @@ public:
 
     /// \brief Determines whether we have exceeded the maximum
     /// recursive template instantiations.
-    LLVM_EXPLICIT operator bool() const { return Invalid; }
+    bool isInvalid() const { return Invalid; }
 
   private:
     Sema &SemaRef;
@@ -6634,7 +6646,8 @@ public:
 
   void DiagnosePropertyMismatch(ObjCPropertyDecl *Property,
                                 ObjCPropertyDecl *SuperProperty,
-                                const IdentifierInfo *Name);
+                                const IdentifierInfo *Name,
+                                bool OverridingProtocolProperty);
 
   void DiagnoseClassExtensionDupMethods(ObjCCategoryDecl *CAT,
                                         ObjCInterfaceDecl *ID);
@@ -7020,6 +7033,11 @@ public:
                                       SourceLocation StartLoc,
                                       SourceLocation LParenLoc,
                                       SourceLocation EndLoc);
+  /// \brief Called on well-formed 'firstprivate' clause.
+  OMPClause *ActOnOpenMPFirstprivateClause(ArrayRef<Expr *> VarList,
+                                           SourceLocation StartLoc,
+                                           SourceLocation LParenLoc,
+                                           SourceLocation EndLoc);
   /// \brief Called on well-formed 'shared' clause.
   OMPClause *ActOnOpenMPSharedClause(ArrayRef<Expr *> VarList,
                                      SourceLocation StartLoc,

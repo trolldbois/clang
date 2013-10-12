@@ -1313,6 +1313,18 @@ public:
                                               EndLoc);
   }
 
+  /// \brief Build a new OpenMP 'firstprivate' clause.
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  OMPClause *RebuildOMPFirstprivateClause(ArrayRef<Expr *> VarList,
+                                          SourceLocation StartLoc,
+                                          SourceLocation LParenLoc,
+                                          SourceLocation EndLoc) {
+    return getSema().ActOnOpenMPFirstprivateClause(VarList, StartLoc, LParenLoc,
+                                                   EndLoc);
+  }
+
   OMPClause *RebuildOMPSharedClause(ArrayRef<Expr *> VarList,
                                     SourceLocation StartLoc,
                                     SourceLocation LParenLoc,
@@ -6343,6 +6355,26 @@ TreeTransform<Derived>::TransformOMPPrivateClause(OMPPrivateClause *C) {
 
 template<typename Derived>
 OMPClause *
+TreeTransform<Derived>::TransformOMPFirstprivateClause(
+                                                 OMPFirstprivateClause *C) {
+  llvm::SmallVector<Expr *, 16> Vars;
+  Vars.reserve(C->varlist_size());
+  for (OMPFirstprivateClause::varlist_iterator I = C->varlist_begin(),
+                                               E = C->varlist_end();
+       I != E; ++I) {
+    ExprResult EVar = getDerived().TransformExpr(cast<Expr>(*I));
+    if (EVar.isInvalid())
+      return 0;
+    Vars.push_back(EVar.take());
+  }
+  return getDerived().RebuildOMPFirstprivateClause(Vars,
+                                                   C->getLocStart(),
+                                                   C->getLParenLoc(),
+                                                   C->getLocEnd());
+}
+
+template<typename Derived>
+OMPClause *
 TreeTransform<Derived>::TransformOMPSharedClause(OMPSharedClause *C) {
   llvm::SmallVector<Expr *, 16> Vars;
   Vars.reserve(C->varlist_size());
@@ -8313,7 +8345,9 @@ TreeTransform<Derived>::TransformLambdaScope(LambdaExpr *E,
     if (!C->isInitCapture())
       continue;
     InitCaptureExprs[C - E->capture_begin()] =
-        getDerived().TransformExpr(E->getInitCaptureInit(C));
+        getDerived().TransformInitializer(
+            C->getCapturedVar()->getInit(),
+            C->getCapturedVar()->getInitStyle() == VarDecl::CallInit);
   }
 
   // Introduce the context of the call operator.
@@ -8353,14 +8387,15 @@ TreeTransform<Derived>::TransformLambdaScope(LambdaExpr *E,
         Invalid = true;
         continue;
       }
-      FieldDecl *OldFD = C->getInitCaptureField();
-      FieldDecl *NewFD = getSema().checkInitCapture(
-          C->getLocation(), OldFD->getType()->isReferenceType(),
-          OldFD->getIdentifier(), Init.take());
-      if (!NewFD)
+      VarDecl *OldVD = C->getCapturedVar();
+      VarDecl *NewVD = getSema().checkInitCapture(
+          C->getLocation(), OldVD->getType()->isReferenceType(),
+          OldVD->getIdentifier(), Init.take());
+      if (!NewVD)
         Invalid = true;
       else
-        getDerived().transformedLocalDecl(OldFD, NewFD);
+        getDerived().transformedLocalDecl(OldVD, NewVD);
+      getSema().buildInitCaptureField(LSI, NewVD);
       continue;
     }
 

@@ -972,9 +972,12 @@ CXXMethodDecl* CXXRecordDecl::getLambdaStaticInvoker() const {
   DeclContext::lookup_const_result Invoker = lookup(Name);
   if (Invoker.empty()) return 0;
   assert(Invoker.size() == 1 && "More than one static invoker operator!");  
-  CXXMethodDecl *Result = cast<CXXMethodDecl>(Invoker.front());  
-  return Result;
-
+  NamedDecl *InvokerFun = Invoker.front();
+  if (FunctionTemplateDecl *InvokerTemplate =
+                  dyn_cast<FunctionTemplateDecl>(InvokerFun)) 
+    return cast<CXXMethodDecl>(InvokerTemplate->getTemplatedDecl());
+  
+  return cast<CXXMethodDecl>(InvokerFun); 
 }
 
 void CXXRecordDecl::getCaptureFields(
@@ -992,6 +995,7 @@ void CXXRecordDecl::getCaptureFields(
     else if (C->capturesVariable())
       Captures[C->getCapturedVar()] = *Field;
   }
+  assert(Field == field_end());
 }
 
 TemplateParameterList * 
@@ -1323,21 +1327,8 @@ bool CXXMethodDecl::isStatic() const {
   if (MD->getStorageClass() == SC_Static)
     return true;
 
-  DeclarationName Name = getDeclName();
-  // [class.free]p1:
-  // Any allocation function for a class T is a static member
-  // (even if not explicitly declared static).
-  if (Name.getCXXOverloadedOperator() == OO_New ||
-      Name.getCXXOverloadedOperator() == OO_Array_New)
-    return true;
-
-  // [class.free]p6 Any deallocation function for a class X is a static member
-  // (even if not explicitly declared static).
-  if (Name.getCXXOverloadedOperator() == OO_Delete ||
-      Name.getCXXOverloadedOperator() == OO_Array_Delete)
-    return true;
-
-  return false;
+  OverloadedOperatorKind OOK = getDeclName().getCXXOverloadedOperator();
+  return isStaticOverloadedOperator(OOK);
 }
 
 static bool recursivelyOverrides(const CXXMethodDecl *DerivedMD,
@@ -1551,10 +1542,16 @@ bool CXXMethodDecl::hasInlineBody() const {
 }
 
 bool CXXMethodDecl::isLambdaStaticInvoker() const {
-  return getParent()->isLambda() && 
-         getParent()->getLambdaStaticInvoker() == this;
+  const CXXRecordDecl *P = getParent();
+  if (P->isLambda()) {
+    if (const CXXMethodDecl *StaticInvoker = P->getLambdaStaticInvoker()) {
+      if (StaticInvoker == this) return true;
+      if (P->isGenericLambda() && this->isFunctionTemplateSpecialization())
+        return StaticInvoker == this->getPrimaryTemplate()->getTemplatedDecl();
+    }
+  }
+  return false;
 }
-
 
 CXXCtorInitializer::CXXCtorInitializer(ASTContext &Context,
                                        TypeSourceInfo *TInfo, bool IsVirtual,

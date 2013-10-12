@@ -1554,7 +1554,7 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
                "inheriting constructor template in dependent context?");
         Sema::InstantiatingTemplate Inst(SemaRef, Constructor->getLocation(),
                                          Inh);
-        if (Inst)
+        if (Inst.isInvalid())
           return 0;
         Sema::ContextRAII SavedContext(SemaRef, Inh->getDeclContext());
         LocalInstantiationScope LocalScope(SemaRef);
@@ -2964,7 +2964,7 @@ void Sema::InstantiateExceptionSpec(SourceLocation PointOfInstantiation,
 
   InstantiatingTemplate Inst(*this, PointOfInstantiation, Decl,
                              InstantiatingTemplate::ExceptionSpecification());
-  if (Inst) {
+  if (Inst.isInvalid()) {
     // We hit the instantiation depth limit. Clear the exception specification
     // so that our callers don't have to cope with EST_Uninstantiated.
     FunctionProtoType::ExtProtoInfo EPI = Proto->getExtProtoInfo();
@@ -3188,7 +3188,7 @@ void Sema::InstantiateFunctionDefinition(SourceLocation PointOfInstantiation,
     Function->setImplicitlyInline();
 
   InstantiatingTemplate Inst(*this, PointOfInstantiation, Function);
-  if (Inst)
+  if (Inst.isInvalid())
     return;
 
   // Copy the inner loc start from the pattern.
@@ -3299,7 +3299,7 @@ VarTemplateSpecializationDecl *Sema::BuildVarTemplateInstantiation(
     return 0;
 
   InstantiatingTemplate Inst(*this, PointOfInstantiation, FromVar);
-  if (Inst)
+  if (Inst.isInvalid())
     return 0;
 
   MultiLevelTemplateArgumentList TemplateArgLists;
@@ -3312,9 +3312,9 @@ VarTemplateSpecializationDecl *Sema::BuildVarTemplateInstantiation(
   // we want to instantiate a definition.
   FromVar = FromVar->getFirstDeclaration();
 
-  TemplateDeclInstantiator Instantiator(
-      *this, FromVar->getDeclContext(),
-      MultiLevelTemplateArgumentList(TemplateArgList));
+  MultiLevelTemplateArgumentList MultiLevelList(TemplateArgList);
+  TemplateDeclInstantiator Instantiator(*this, FromVar->getDeclContext(),
+                                        MultiLevelList);
 
   // TODO: Set LateAttrs and StartingScope ...
 
@@ -3369,6 +3369,7 @@ void Sema::BuildVariableInstantiation(
   NewVar->setInitStyle(OldVar->getInitStyle());
   NewVar->setCXXForRangeDecl(OldVar->isCXXForRangeDecl());
   NewVar->setConstexpr(OldVar->isConstexpr());
+  NewVar->setInitCapture(OldVar->isInitCapture());
   NewVar->setPreviousDeclInSameBlockScope(
       OldVar->isPreviousDeclInSameBlockScope());
   NewVar->setAccess(OldVar->getAccess());
@@ -3568,7 +3569,7 @@ void Sema::InstantiateVariableDefinition(SourceLocation PointOfInstantiation,
       // FIXME: Factor out the duplicated instantiation context setup/tear down
       // code here.
       InstantiatingTemplate Inst(*this, PointOfInstantiation, Var);
-      if (Inst)
+      if (Inst.isInvalid())
         return;
 
       // If we're performing recursive template instantiation, create our own
@@ -3692,7 +3693,7 @@ void Sema::InstantiateVariableDefinition(SourceLocation PointOfInstantiation,
   }
 
   InstantiatingTemplate Inst(*this, PointOfInstantiation, Var);
-  if (Inst)
+  if (Inst.isInvalid())
     return;
 
   // If we're performing recursive template instantiation, create our own
