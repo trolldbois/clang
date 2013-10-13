@@ -3002,6 +3002,13 @@ CINDEX_LINKAGE long long clang_Type_getSizeOf(CXType T);
  */
 CINDEX_LINKAGE long long clang_Type_getOffsetOf(CXType T, const char *S);
 
+/**
+ * \brief Return the offset of the field declaration pointed by the Cursor.
+ *
+ * If the cursor is not a record field declaration, -1 is returned.
+ */
+CINDEX_LINKAGE long long clang_Cursor_getOffsetOfField(CXCursor C);
+
 enum CXRefQualifierKind {
   /** \brief No ref-qualifier was provided. */
   CXRefQualifier_None = 0,

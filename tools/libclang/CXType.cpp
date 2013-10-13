@@ -816,6 +816,17 @@ long long clang_Type_getOffsetOf(CXType PT, const char *S) {
   return CXTypeLayoutError_InvalidFieldName;
 }
 
+long long clang_Cursor_getOffsetOfField(CXCursor C) {
+  if (clang_isDeclaration(C.kind)) {
+    const Decl *D = getCursorDecl(C);
+    if (const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(D)) {
+      ASTContext &Ctx = cxcursor::getCursorContext(C);
+      return Ctx.getFieldOffset(FD);
+    }
+  }
+  return -1;
+}
+
 enum CXRefQualifierKind clang_Type_getCXXRefQualifier(CXType T) {
   QualType QT = GetQualType(T);
   if (QT.isNull())
