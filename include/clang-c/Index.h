@@ -3038,7 +3038,7 @@ enum CXFieldVisitResult {
  * The visitor should return one of the \c CXChildVisitResult values
  * to direct clang_visitCursorChildren().
  */
-typedef enum CXFieldVisitResult (*CXFieldVisitor)(CXType T,
+typedef enum CXFieldVisitResult (*CXFieldVisitor)(CXCursor C,                                                  
                                                   CXClientData client_data);
 
 /**

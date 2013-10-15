@@ -1775,6 +1775,23 @@ class Type(Structure):
         return RefQualifierKind.from_id(
                 conf.lib.clang_Type_getCXXRefQualifier(self))
 
+    def get_fields(self):
+        """Return an iterator for accessing the fields of this type."""
+
+        def visitor(field, children):
+            # FIXME: Document this assertion in API.
+            # FIXME: There should just be an isNull method.
+            assert field != conf.lib.clang_getNullCursor()
+
+            # Create reference to TU so it isn't GC'd before Cursor.
+            field._tu = self._tu
+            fields.append(field)
+            return 1 # continue
+        fields = []
+        conf.lib.clang_Type_visitFields(self, callbacks['fields_visit'](visitor),
+            fields)
+        return iter(fields)
+
     @property
     def spelling(self):
         """Retrieve the spelling of this Type."""
@@ -2663,6 +2680,7 @@ class Token(Structure):
 callbacks['translation_unit_includes'] = CFUNCTYPE(None, c_object_p,
         POINTER(SourceLocation), c_uint, py_object)
 callbacks['cursor_visit'] = CFUNCTYPE(c_int, Cursor, Cursor, py_object)
+callbacks['fields_visit'] = CFUNCTYPE(c_int, Cursor, py_object)
 
 # Functions strictly alphabetical order.
 functionList = [
@@ -3256,6 +3274,10 @@ functionList = [
 
   ("clang_Type_getCXXRefQualifier",
    [Type],
+   c_uint),
+
+  ("clang_Type_visitFields",
+   [Type, callbacks['fields_visit'], py_object],
    c_uint),
 ]
 

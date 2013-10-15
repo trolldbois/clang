@@ -906,9 +906,9 @@ unsigned clang_Type_visitFields(CXType PT,
 
   for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
        I != E; ++I){
-    const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(I);
+    const FieldDecl *FD = dyn_cast_or_null<FieldDecl>((*I));
     // Callback to the client.
-    visitor(PT, FD, clientData);
+    visitor(cxcursor::MakeCXCursor(FD, GetTU(PT)), client_data);
   }
   return 0;
 }
