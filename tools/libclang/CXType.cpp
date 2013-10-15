@@ -818,11 +818,12 @@ long long clang_Type_getOffsetOf(CXType PT, const char *S) {
 
 long long clang_Cursor_getOffsetOfField(CXCursor C) {
   if (clang_isDeclaration(C.kind)) {
-    const Decl *D = getCursorDecl(C);
-    if (const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(D)) {
-      ASTContext &Ctx = cxcursor::getCursorContext(C);
+    const Decl *D = cxcursor::getCursorDecl(C);
+    ASTContext &Ctx = cxcursor::getCursorContext(C);
+    if (const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(D))
       return Ctx.getFieldOffset(FD);
-    }
+    if (const IndirectFieldDecl *IFD = dyn_cast_or_null<IndirectFieldDecl>(D))
+      return Ctx.getFieldOffset(IFD);
   }
   return -1;
 }
@@ -880,6 +881,36 @@ CXString clang_getDeclObjCTypeEncoding(CXCursor C) {
   }
 
   return cxstring::createDup(encoding);
+}
+
+unsigned clang_Type_visitFields(CXType PT,
+                                CXFieldVisitor visitor,
+                                CXClientData client_data){
+  CXCursor PC = clang_getTypeDeclaration(PT);
+  if (clang_isInvalid(PC.kind))
+    return CXTypeLayoutError_Invalid;
+  const RecordDecl *RD =
+        dyn_cast_or_null<RecordDecl>(cxcursor::getCursorDecl(PC));
+  if (!RD || RD->isInvalidDecl())
+    return CXTypeLayoutError_Invalid;
+  RD = RD->getDefinition();
+  if (!RD)
+    return CXTypeLayoutError_Incomplete;
+  if (RD->isInvalidDecl())
+    return CXTypeLayoutError_Invalid;
+  QualType RT = GetQualType(PT);
+  if (RT->isIncompleteType())
+    return CXTypeLayoutError_Incomplete;
+  if (RT->isDependentType())
+    return CXTypeLayoutError_Dependent;
+
+  for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
+       I != E; ++I){
+    const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(I);
+    // Callback to the client.
+    visitor(PT, FD, clientData);
+  }
+  return 0;
 }
 
 } // end: extern "C"

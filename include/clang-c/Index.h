@@ -3003,6 +3003,69 @@ CINDEX_LINKAGE long long clang_Type_getSizeOf(CXType T);
 CINDEX_LINKAGE long long clang_Type_getOffsetOf(CXType T, const char *S);
 
 /**
+ * \brief Describes how the traversal of the children of a particular
+ * cursor should proceed after visiting a particular child cursor.
+ *
+ * A value of this enumeration type should be returned by each
+ * \c CXCursorVisitor to indicate how clang_visitChildren() proceed.
+ */
+enum CXFieldVisitResult {
+  /**
+   * \brief Terminates the cursor traversal.
+   */
+  CXFieldVisit_Break,
+  /**
+   * \brief Continues the cursor traversal with the next sibling of
+   * the cursor just visited, without visiting its children.
+   */
+  CXFieldVisit_Continue,
+  /**
+   * \brief Recursively traverse the children of this cursor, using
+   * the same visitor and client data.
+   */
+  CXFieldVisit_Recurse
+};
+
+/**
+ * \brief Visitor invoked for each cursor found by a traversal.
+ *
+ * This visitor function will be invoked for each cursor found by
+ * clang_visitCursorChildren(). Its first argument is the cursor being
+ * visited, its second argument is the parent visitor for that cursor,
+ * and its third argument is the client data provided to
+ * clang_visitCursorChildren().
+ *
+ * The visitor should return one of the \c CXChildVisitResult values
+ * to direct clang_visitCursorChildren().
+ */
+typedef enum CXFieldVisitResult (*CXFieldVisitor)(CXType T,
+                                                  CXClientData client_data);
+
+/**
+ * \brief Visit the fields of a particular type.
+ *
+ * This function visits all the direct fields of the given cursor,
+ * invoking the given \p visitor function with the cursors of each
+ * visited child. The traversal may be recursive, if the visitor returns
+ * \c CXChildVisit_Recurse. The traversal may also be ended prematurely, if
+ * the visitor returns \c CXFieldVisit_Break.
+ *
+ * \param parent the cursor whose field may be visited. 
+ *
+ * \param visitor the visitor function that will be invoked for each
+ * child of \p parent.
+ *
+ * \param client_data pointer data supplied by the client, which will
+ * be passed to the visitor each time it is invoked.
+ *
+ * \returns a non-zero value if the traversal was terminated
+ * prematurely by the visitor returning \c CXFieldVisit_Break.
+ */
+CINDEX_LINKAGE unsigned clang_Type_visitFields(CXType T,
+                                               CXFieldVisitor visitor,
+                                               CXClientData client_data);
+
+/**
  * \brief Return the offset of the field declaration pointed by the Cursor.
  *
  * If the cursor is not a record field declaration, -1 is returned.
