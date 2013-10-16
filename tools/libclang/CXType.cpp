@@ -913,11 +913,10 @@ unsigned clang_Type_visitFields(CXType PT,
   return 0;
 }
 
-unsigned clang_Cursor_isAnonymous(CXCursor C)
+unsigned clang_Cursor_isAnonymous(CXCursor C){
   if (!clang_isDeclaration(C.kind))
     return false;
   const Decl *D = cxcursor::getCursorDecl(C);
-  ASTContext &Ctx = cxcursor::getCursorContext(C);
   if (const RecordDecl *FD = dyn_cast_or_null<RecordDecl>(D))
     return FD->isAnonymousStructOrUnion();
   return false;
