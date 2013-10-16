@@ -65,12 +65,12 @@ typedef char BOOL;
 // Properties that contain the name "delegate" or "dataSource",
 // or have exact name "target" have unsafe_unretained attribute.
 @interface NSInvocation 
-@property (nonatomic, unsafe_unretained) id target;
+@property (nonatomic, assign) id target;
 
 
-@property (nonatomic, unsafe_unretained) id dataSource;
+@property (nonatomic, assign) id dataSource;
 
-@property (nonatomic, unsafe_unretained) id xxxdelegateYYY;
+@property (nonatomic, assign) id xxxdelegateYYY;
 
 
 
@@ -117,12 +117,12 @@ typedef char BOOL;
 
 
 @interface NSInvocation(CAT)
-@property (nonatomic, unsafe_unretained) id target;
+@property (nonatomic, assign) id target;
 
 
-@property (nonatomic, unsafe_unretained) id dataSource;
+@property (nonatomic, assign) id dataSource;
 
-@property (nonatomic, unsafe_unretained) id xxxdelegateYYY;
+@property (nonatomic, assign) id xxxdelegateYYY;
 
 
 
@@ -226,4 +226,12 @@ DEPRECATED
 @property (nonatomic, readonly) id (*expressionFuncptr)(id, NSArray *, NSMutableDictionary *);
 @property (nonatomic) id (*MyFuncptr)(id, NSArray *, NSMutableDictionary *);
 
+@end
+
+// rdar://15231241
+@interface rdar15231241
+@property (nonatomic, readonly) double Ddelegate;
+@property (nonatomic, readonly) float Fdelegate;
+@property (nonatomic, readonly) int Idelegate;
+@property (nonatomic, readonly) BOOL Bdelegate;
 @end
