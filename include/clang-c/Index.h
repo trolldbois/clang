@@ -3003,40 +3003,39 @@ CINDEX_LINKAGE long long clang_Type_getSizeOf(CXType T);
 CINDEX_LINKAGE long long clang_Type_getOffsetOf(CXType T, const char *S);
 
 /**
- * \brief Describes how the traversal of the children of a particular
- * cursor should proceed after visiting a particular child cursor.
+ * \brief Describes how the traversal of the fields of a particular
+ * cursor representing a record_decl should proceed.
  *
  * A value of this enumeration type should be returned by each
- * \c CXCursorVisitor to indicate how clang_visitChildren() proceed.
+ * \c CXFieldVisitor to indicate how clang_visitFields() proceed.
  */
 enum CXFieldVisitResult {
   /**
-   * \brief Terminates the cursor traversal.
+   * \brief Terminates the record traversal.
    */
   CXFieldVisit_Break,
   /**
-   * \brief Continues the cursor traversal with the next sibling of
-   * the cursor just visited, without visiting its children.
+   * \brief Continues the record traversal with the next field of
+   * the record just visited, without visiting its children.
    */
   CXFieldVisit_Continue,
   /**
-   * \brief Recursively traverse the children of this cursor, using
+   * \brief Recursively traverse the fields of this cursor, using
    * the same visitor and client data.
    */
   CXFieldVisit_Recurse
 };
 
 /**
- * \brief Visitor invoked for each cursor found by a traversal.
+ * \brief Visitor invoked for each field found by a traversal.
  *
- * This visitor function will be invoked for each cursor found by
- * clang_visitCursorChildren(). Its first argument is the cursor being
- * visited, its second argument is the parent visitor for that cursor,
- * and its third argument is the client data provided to
- * clang_visitCursorChildren().
+ * This visitor function will be invoked for each field found by
+ * clang_visitCursorFields(). Its first argument is the cursor being
+ * visited, its second argument is the client data provided to
+ * clang_visitCursorFields().
  *
- * The visitor should return one of the \c CXChildVisitResult values
- * to direct clang_visitCursorChildren().
+ * The visitor should return one of the \c CXFieldVisitResult values
+ * to direct clang_visitCursorFields().
  */
 typedef enum CXFieldVisitResult (*CXFieldVisitor)(CXCursor C,                                                  
                                                   CXClientData client_data);
@@ -3046,14 +3045,14 @@ typedef enum CXFieldVisitResult (*CXFieldVisitor)(CXCursor C,
  *
  * This function visits all the direct fields of the given cursor,
  * invoking the given \p visitor function with the cursors of each
- * visited child. The traversal may be recursive, if the visitor returns
- * \c CXChildVisit_Recurse. The traversal may also be ended prematurely, if
+ * visited field. The traversal may be recursive, if the visitor returns
+ * \c CXFieldVisit_Recurse. The traversal may also be ended prematurely, if
  * the visitor returns \c CXFieldVisit_Break.
  *
- * \param parent the cursor whose field may be visited. 
+ * \param T the record type whose field may be visited. 
  *
  * \param visitor the visitor function that will be invoked for each
- * child of \p parent.
+ * field of \p parent.
  *
  * \param client_data pointer data supplied by the client, which will
  * be passed to the visitor each time it is invoked.
