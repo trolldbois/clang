@@ -1385,6 +1385,12 @@ class Cursor(Structure):
         """
         return TokenGroup.get_tokens(self._tu, self.extent)
 
+    def is_anonymous(self):
+        """
+        Check if the field is anonymous.
+        """
+        return True#conf.lib.clang_Cursor_isAnonymous(self)
+
     def is_bitfield(self):
         """
         Check if the field is a bitfield.
@@ -1779,8 +1785,6 @@ class Type(Structure):
         """Return an iterator for accessing the fields of this type."""
 
         def visitor(field, children):
-            # FIXME: Document this assertion in API.
-            # FIXME: There should just be an isNull method.
             assert field != conf.lib.clang_getNullCursor()
 
             # Create reference to TU so it isn't GC'd before Cursor.
@@ -3236,6 +3240,10 @@ functionList = [
    [Cursor, c_uint],
    Cursor,
    Cursor.from_result),
+
+#  ("clang_Cursor_isAnonymous",
+#   [Cursor],
+#  bool),
 
   ("clang_Cursor_isBitField",
    [Cursor],

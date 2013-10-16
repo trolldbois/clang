@@ -3072,6 +3072,11 @@ CINDEX_LINKAGE unsigned clang_Type_visitFields(CXType T,
  */
 CINDEX_LINKAGE long long clang_Cursor_getOffsetOfField(CXCursor C);
 
+/**
+ * \brief Determine whether the given cursor represents an anonymous record.
+ */
+CINDEX_LINKAGE unsigned clang_Cursor_isAnonymous(CXCursor C);
+
 enum CXRefQualifierKind {
   /** \brief No ref-qualifier was provided. */
   CXRefQualifier_None = 0,
