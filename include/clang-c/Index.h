@@ -3052,7 +3052,7 @@ typedef enum CXFieldVisitResult (*CXFieldVisitor)(CXCursor C,
  * \param T the record type whose field may be visited. 
  *
  * \param visitor the visitor function that will be invoked for each
- * field of \p parent.
+ * field of \p T.
  *
  * \param client_data pointer data supplied by the client, which will
  * be passed to the visitor each time it is invoked.
