@@ -1387,9 +1387,11 @@ class Cursor(Structure):
 
     def is_anonymous(self):
         """
-        Check if the field is anonymous.
+        Check if the record is anonymous.
         """
-        return True#conf.lib.clang_Cursor_isAnonymous(self)
+        if self.kind == CursorKind.FIELD_DECL:
+            return self.type.get_declaration().is_anonymous()
+        return conf.lib.clang_Cursor_isAnonymous(self)
 
     def is_bitfield(self):
         """
@@ -3241,9 +3243,9 @@ functionList = [
    Cursor,
    Cursor.from_result),
 
-#  ("clang_Cursor_isAnonymous",
-#   [Cursor],
-#  bool),
+  ("clang_Cursor_isAnonymous",
+   [Cursor],
+   bool),
 
   ("clang_Cursor_isBitField",
    [Cursor],

@@ -915,11 +915,11 @@ unsigned clang_Type_visitFields(CXType PT,
 
 unsigned clang_Cursor_isAnonymous(CXCursor C){
   if (!clang_isDeclaration(C.kind))
-    return false;
+    return 0;
   const Decl *D = cxcursor::getCursorDecl(C);
   if (const RecordDecl *FD = dyn_cast_or_null<RecordDecl>(D))
     return FD->isAnonymousStructOrUnion();
-  return false;
+  return 0;
 }
 
 } // end: extern "C"
