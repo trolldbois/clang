@@ -3065,9 +3065,9 @@ CINDEX_LINKAGE unsigned clang_Type_visitFields(CXType T,
                                                CXClientData client_data);
 
 /**
- * \brief Return the offset of the field declaration pointed by the Cursor.
+ * \brief Return the offset of the field represented by the Cursor.
  *
- * If the cursor is not a record field declaration, -1 is returned.
+ * If the cursor is not a field declaration, -1 is returned.
  */
 CINDEX_LINKAGE long long clang_Cursor_getOffsetOfField(CXCursor C);
 
