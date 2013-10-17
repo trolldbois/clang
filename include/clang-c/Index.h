@@ -3016,14 +3016,9 @@ enum CXFieldVisitResult {
   CXFieldVisit_Break,
   /**
    * \brief Continues the record traversal with the next field of
-   * the record just visited, without visiting its children.
+   * the record just visited.
    */
-  CXFieldVisit_Continue,
-  /**
-   * \brief Recursively traverse the fields of this cursor, using
-   * the same visitor and client data.
-   */
-  CXFieldVisit_Recurse
+  CXFieldVisit_Continue
 };
 
 /**

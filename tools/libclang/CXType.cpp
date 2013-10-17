@@ -888,29 +888,26 @@ unsigned clang_Type_visitFields(CXType PT,
                                 CXClientData client_data){
   CXCursor PC = clang_getTypeDeclaration(PT);
   if (clang_isInvalid(PC.kind))
-    return CXTypeLayoutError_Invalid;
+    return false;
   const RecordDecl *RD =
         dyn_cast_or_null<RecordDecl>(cxcursor::getCursorDecl(PC));
   if (!RD || RD->isInvalidDecl())
-    return CXTypeLayoutError_Invalid;
+    return false;
   RD = RD->getDefinition();
-  if (!RD)
-    return CXTypeLayoutError_Incomplete;
-  if (RD->isInvalidDecl())
-    return CXTypeLayoutError_Invalid;
-  QualType RT = GetQualType(PT);
-  if (RT->isIncompleteType())
-    return CXTypeLayoutError_Incomplete;
-  if (RT->isDependentType())
-    return CXTypeLayoutError_Dependent;
+  if (!RD || RD->isInvalidDecl())
+    return false;
 
   for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
        I != E; ++I){
     const FieldDecl *FD = dyn_cast_or_null<FieldDecl>((*I));
     // Callback to the client.
-    visitor(cxcursor::MakeCXCursor(FD, GetTU(PT)), client_data);
-  }
-  return 0;
+    switch (visitor(cxcursor::MakeCXCursor(FD, GetTU(PT)), client_data)) {
+    case CXFieldVisit_Break:
+      return true;
+    case CXFieldVisit_Continue:
+      continue
+    }
+  return true;
 }
 
 unsigned clang_Cursor_isAnonymous(CXCursor C){
