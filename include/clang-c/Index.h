@@ -3040,8 +3040,7 @@ typedef enum CXFieldVisitResult (*CXFieldVisitor)(CXCursor C,
  *
  * This function visits all the direct fields of the given cursor,
  * invoking the given \p visitor function with the cursors of each
- * visited field. The traversal may be recursive, if the visitor returns
- * \c CXFieldVisit_Recurse. The traversal may also be ended prematurely, if
+ * visited field. The traversal may be ended prematurely, if
  * the visitor returns \c CXFieldVisit_Break.
  *
  * \param T the record type whose field may be visited. 
