@@ -901,12 +901,14 @@ unsigned clang_Type_visitFields(CXType PT,
        I != E; ++I){
     const FieldDecl *FD = dyn_cast_or_null<FieldDecl>((*I));
     // Callback to the client.
-    switch (visitor(cxcursor::MakeCXCursor(FD, GetTU(PT)), client_data)) {
+    switch (visitor(cxcursor::MakeCXCursor(FD, GetTU(PT)), client_data)){
     case CXFieldVisit_Break:
       return true;
     case CXFieldVisit_Continue:
-      continue
+    default:
+      break;
     }
+  }
   return true;
 }
 
