@@ -1552,16 +1552,16 @@ def override_keyword_hides_virtual_member_function : Error<
 def err_function_marked_override_not_overriding : Error<
   "%0 marked 'override' but does not override any member functions">;
 def err_class_marked_final_used_as_base : Error<
-  "base %0 is marked 'final'">;
+  "base %0 is marked '%select{final|sealed}1'">;
 def warn_abstract_final_class : Warning<
-  "abstract class is marked 'final'">, InGroup<AbstractFinalClass>;
+  "abstract class is marked '%select{final|sealed}0'">, InGroup<AbstractFinalClass>;
 
 // C++11 attributes
 def err_repeat_attribute : Error<"'%0' attribute cannot be repeated">;
 
 // C++11 final
 def err_final_function_overridden : Error<
-  "declaration of %0 overrides a 'final' function">;
+  "declaration of %0 overrides a '%select{final|sealed}1' function">;
 
 // C++11 scoped enumerations
 def err_enum_invalid_underlying : Error<
@@ -2015,6 +2015,10 @@ def err_attribute_weakref_without_alias : Error<
   "weakref declaration of '%0' must also have an alias attribute">;
 def err_alias_not_supported_on_darwin : Error <
   "only weak aliases are supported on darwin">;
+def err_alias_to_undefined : Error<
+  "alias must point to a defined variable or function">;
+def err_cyclic_alias : Error<
+  "alias definition is part of a cycle">;
 def warn_attribute_wrong_decl_type : Warning<
   "%0 attribute only applies to %select{functions|unions|"
   "variables and functions|functions and methods|parameters|"
@@ -2222,6 +2226,12 @@ def warn_return_typestate_mismatch : Warning<
 def warn_loop_state_mismatch : Warning<
   "state of variable '%0' must match at the entry and exit of loop">,
   InGroup<Consumed>, DefaultIgnore;
+def warn_param_return_typestate_mismatch : Warning<
+  "parameter '%0' not in expected state when the function returns: expected "
+  "'%1', observed '%2'">, InGroup<Consumed>, DefaultIgnore;
+def warn_param_typestate_mismatch : Warning<
+  "argument not in expected state; expected '%0', observed '%1'">,
+  InGroup<Consumed>, DefaultIgnore;
 
 def warn_impcast_vector_scalar : Warning<
   "implicit conversion turns vector to scalar: %0 to %1">,
@@ -2359,7 +2369,7 @@ def warn_cleanup_ext : Warning<
   "than a simple identifier">, 
   InGroup<GccCompat>;
 def err_attribute_cleanup_arg_not_function : Error<
-  "'cleanup' argument %select{|%1 }0is not a function">;
+  "'cleanup' argument %select{|%1 |%1 }0is not a %select{||single }0function">;
 def err_attribute_cleanup_func_must_take_one_arg : Error<
   "'cleanup' function %0 must take 1 parameter">;
 def err_attribute_cleanup_func_arg_incompatible_type : Error<
@@ -2829,6 +2839,8 @@ def warn_template_export_unsupported : Warning<
   "exported templates are unsupported">;
 def err_template_outside_namespace_or_class_scope : Error<
   "templates can only be declared in namespace or class scope">;
+def err_template_inside_local_class : Error<
+  "templates cannot be declared inside of a local class">;
 def err_template_linkage : Error<"templates must have C++ linkage">;
 def err_template_typedef : Error<"a typedef cannot be a template">;
 def err_template_unnamed_class : Error<
@@ -3488,6 +3500,10 @@ def warn_missing_variable_declarations : Warning<
   "no previous extern declaration for non-static variable %0">,
   InGroup<DiagGroup<"missing-variable-declarations">>, DefaultIgnore;
 def err_redefinition : Error<"redefinition of %0">;
+def err_alias_after_tentative :
+  Error<"alias definition of %0 after tentative definition">;
+def err_tentative_after_alias :
+  Error<"tentative definition of %0 after alias definition">;
 def err_definition_of_implicitly_declared_member : Error<
   "definition of implicitly declared %select{default constructor|copy "
   "constructor|move constructor|copy assignment operator|move assignment "
@@ -3565,6 +3581,9 @@ def err_static_non_static : Error<
   "static declaration of %0 follows non-static declaration">;
 def err_different_language_linkage : Error<
   "declaration of %0 has a different language linkage">;
+def ext_retained_language_linkage : Extension<
+  "friend function %0 retaining previous language linkage is an extension">,
+  InGroup<DiagGroup<"retained-language-linkage">>;
 def err_extern_c_global_conflict : Error<
   "declaration of %1 %select{with C language linkage|in global scope}0 "
   "conflicts with declaration %select{in global scope|with C language linkage}0">;
@@ -5894,6 +5913,8 @@ def err_operator_new_delete_declared_in_namespace : Error<
   "%0 cannot be declared inside a namespace">;
 def err_operator_new_delete_declared_static : Error<
   "%0 cannot be declared static in global scope">;
+def err_operator_new_delete_declared_inline : Error<
+  "replacement function %0 cannot be declared 'inline'">;
 def err_operator_new_delete_invalid_result_type : Error<
   "%0 must return type %1">;
 def err_operator_new_delete_dependent_result_type : Error<

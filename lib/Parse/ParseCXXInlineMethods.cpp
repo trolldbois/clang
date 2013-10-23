@@ -115,6 +115,7 @@ NamedDecl *Parser::ParseCXXInlineMethodDef(AccessSpecifier AS,
   // the tokens and store them for parsing at the end of the translation unit.
   if (getLangOpts().DelayedTemplateParsing &&
       DefinitionKind == FDK_Definition &&
+      !D.getDeclSpec().isConstexprSpecified() &&
       ((Actions.CurContext->isDependentContext() ||
         (TemplateInfo.Kind != ParsedTemplateInfo::NonTemplate &&
          TemplateInfo.Kind != ParsedTemplateInfo::ExplicitSpecialization)) &&
@@ -176,7 +177,9 @@ NamedDecl *Parser::ParseCXXInlineMethodDef(AccessSpecifier AS,
     // If you remove this, you can remove the code that clears the flag
     // after parsing the member.
     if (D.getDeclSpec().isFriendSpecified()) {
-      getFunctionDecl(FnD)->setLateTemplateParsed(true);
+      FunctionDecl *FD = getFunctionDecl(FnD);
+      Actions.CheckForFunctionRedefinition(FD);
+      FD->setLateTemplateParsed(true);
     }
   } else {
     // If semantic analysis could not build a function declaration,
