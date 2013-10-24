@@ -113,7 +113,6 @@ static const char *GetArmArchForMArch(StringRef Value) {
     .Cases("armv7k", "armv7-k", "armv7k")
     .Cases("armv7m", "armv7-m", "armv7m")
     .Cases("armv7s", "armv7-s", "armv7s")
-    .Cases("armv8", "armv8a", "armv8-a", "armv8")
     .Default(0);
 }
 
@@ -167,10 +166,18 @@ std::string Darwin::ComputeEffectiveClangTriple(const ArgList &Args,
   if (!isTargetInitialized())
     return Triple.getTriple();
 
-  SmallString<16> Str;
-  Str += isTargetIPhoneOS() ? "ios" : "macosx";
-  Str += getTargetVersion().getAsString();
-  Triple.setOSName(Str);
+  if (Triple.getArchName() == "thumbv6m" ||
+      Triple.getArchName() == "thumbv7m" ||
+      Triple.getArchName() == "thumbv7em") {
+    // OS is ios or macosx unless it's the v6m or v7m.
+    Triple.setOS(llvm::Triple::Darwin);
+    Triple.setEnvironment(llvm::Triple::EABI);
+  } else {
+    SmallString<16> Str;
+    Str += isTargetIPhoneOS() ? "ios" : "macosx";
+    Str += getTargetVersion().getAsString();
+    Triple.setOSName(Str);
+  }
 
   return Triple.getTriple();
 }
