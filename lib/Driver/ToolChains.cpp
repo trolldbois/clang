@@ -2094,11 +2094,7 @@ enum Distro {
   RHEL4,
   RHEL5,
   RHEL6,
-  Fedora13,
-  Fedora14,
-  Fedora15,
-  Fedora16,
-  FedoraRawhide,
+  Fedora,
   OpenSUSE,
   UbuntuHardy,
   UbuntuIntrepid,
@@ -2116,8 +2112,7 @@ enum Distro {
 };
 
 static bool IsRedhat(enum Distro Distro) {
-  return (Distro >= Fedora13 && Distro <= FedoraRawhide) ||
-         (Distro >= RHEL4    && Distro <= RHEL6);
+  return Distro == Fedora || (Distro >= RHEL4 && Distro <= RHEL6);
 }
 
 static bool IsOpenSUSE(enum Distro Distro) {
@@ -2160,17 +2155,8 @@ static Distro DetectDistro(llvm::Triple::ArchType Arch) {
 
   if (!llvm::MemoryBuffer::getFile("/etc/redhat-release", File)) {
     StringRef Data = File.get()->getBuffer();
-    if (Data.startswith("Fedora release 16"))
-      return Fedora16;
-    else if (Data.startswith("Fedora release 15"))
-      return Fedora15;
-    else if (Data.startswith("Fedora release 14"))
-      return Fedora14;
-    else if (Data.startswith("Fedora release 13"))
-      return Fedora13;
-    else if (Data.startswith("Fedora release") &&
-             Data.find("Rawhide") != StringRef::npos)
-      return FedoraRawhide;
+    if (Data.startswith("Fedora release"))
+      return Fedora;
     else if (Data.startswith("Red Hat Enterprise Linux") &&
              Data.find("release 6") != StringRef::npos)
       return RHEL6;
@@ -2426,12 +2412,11 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
 
   // Try walking via the GCC triple path in case of biarch or multiarch GCC
   // installations with strange symlinks.
-  if (GCCInstallation.isValid())
+  if (GCCInstallation.isValid()) {
     addPathIfExists(SysRoot + "/usr/lib/" + GCCInstallation.getTriple().str() +
                     "/../../" + Multilib, Paths);
 
-  // Add the non-multilib suffixed paths (if potentially different).
-  if (GCCInstallation.isValid()) {
+    // Add the non-multilib suffixed paths (if potentially different).
     const std::string &LibPath = GCCInstallation.getParentLibPath();
     const llvm::Triple &GCCTriple = GCCInstallation.getTriple();
     if (!GCCInstallation.getBiarchSuffix().empty())

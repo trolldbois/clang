@@ -1371,7 +1371,8 @@ def warn_reference_field_is_uninit : Warning<
   "reference %0 is not yet bound to a value when used here">,
   InGroup<Uninitialized>;
 def note_uninit_in_this_constructor : Note<
-  "during field initialization in this constructor">;
+  "during field initialization in %select{this|the implicit default}0 "
+  "constructor">;
 def warn_static_self_reference_in_init : Warning<
   "static variable %0 is suspiciously used within its own initialization">,
   InGroup<UninitializedStaticSelfInit>;
@@ -4291,7 +4292,10 @@ def warn_self_assignment : Warning<
 def warn_string_plus_int : Warning<
   "adding %0 to a string does not append to the string">,
   InGroup<StringPlusInt>;
-def note_string_plus_int_silence : Note<
+def warn_string_plus_char : Warning<
+  "adding %0 to a string pointer does not append to the string">,
+  InGroup<StringPlusChar>;
+def note_string_plus_scalar_silence : Note<
   "use array indexing to silence this warning">;
 
 def warn_sizeof_array_param : Warning<
@@ -5066,6 +5070,8 @@ let CategoryName = "Lambda Issue" in {
   def note_lambda_decl : Note<"lambda expression begins here">;
   def err_lambda_unevaluated_operand : Error<
     "lambda expression in an unevaluated operand">;
+  def err_lambda_in_constant_expression : Error<
+    "a lambda expression may not appear inside of a constant expression">;
   def err_lambda_return_init_list : Error<
     "cannot deduce lambda return type from initializer list">;
   def err_lambda_capture_default_arg : Error<
