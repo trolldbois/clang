@@ -152,6 +152,10 @@ def warn_unused_parameter : Warning<"unused parameter %0">,
   InGroup<UnusedParameter>, DefaultIgnore;
 def warn_unused_variable : Warning<"unused variable %0">,
   InGroup<UnusedVariable>, DefaultIgnore;
+def warn_unused_property_backing_ivar : 
+  Warning<"ivar %0 which backs the property is not "
+  "referenced in this property's accessor">,
+  InGroup<UnusedPropertyIvar>, DefaultIgnore;
 def warn_unused_const_variable : Warning<"unused variable %0">,
   InGroup<UnusedConstVariable>, DefaultIgnore;
 def warn_unused_exception_param : Warning<"unused exception parameter %0">,
@@ -674,6 +678,10 @@ def warn_objc_property_default_assign_on_object : Warning<
   InGroup<ObjCPropertyNoAttribute>;
 def warn_property_attr_mismatch : Warning<
   "property attribute in class extension does not match the primary class">;
+def warn_property_implicitly_mismatched : Warning <
+  "primary property declaration is implicitly strong while redeclaration "
+  "in class extension is weak">,
+  InGroup<DiagGroup<"objc-property-implicit-mismatch">>;
 def warn_objc_property_copy_missing_on_block : Warning<
     "'copy' attribute must be specified for the block property "
     "when -fobjc-gc-only is specified">;
