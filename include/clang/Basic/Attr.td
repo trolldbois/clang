@@ -314,7 +314,8 @@ def Common : InheritableAttr {
 }
 
 def Const : InheritableAttr {
-  let Spellings = [GNU<"const">, GNU<"__const">, CXX11<"gnu", "const">];
+  let Spellings = [GNU<"const">, GNU<"__const">,
+                   CXX11<"gnu", "const">, CXX11<"gnu", "__const">];
 }
 
 def Constructor : InheritableAttr {
@@ -806,7 +807,9 @@ def X86ForceAlignArgPointer : InheritableAttr, TargetSpecificAttr {
 // Attribute to disable AddressSanitizer (or equivalent) checks.
 def NoSanitizeAddress : InheritableAttr {
   let Spellings = [GNU<"no_address_safety_analysis">,
-                   GNU<"no_sanitize_address">];
+                   GNU<"no_sanitize_address">,
+                   CXX11<"gnu", "no_address_safety_analysis">,
+                   CXX11<"gnu", "no_sanitize_address">];
 }
 
 // Attribute to disable ThreadSanitizer checks.
