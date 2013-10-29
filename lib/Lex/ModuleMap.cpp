@@ -83,18 +83,18 @@ Module *ModuleMap::resolveModuleId(const ModuleId &Id, Module *Mod,
   return Context;
 }
 
-ModuleMap::ModuleMap(FileManager &FileMgr, DiagnosticConsumer &DC,
+ModuleMap::ModuleMap(SourceManager &SourceMgr, DiagnosticConsumer &DC,
                      const LangOptions &LangOpts, const TargetInfo *Target,
                      HeaderSearch &HeaderInfo)
-  : LangOpts(LangOpts), Target(Target), HeaderInfo(HeaderInfo),
-    BuiltinIncludeDir(0), CompilingModule(0), SourceModule(0)
-{
+    : SourceMgr(SourceMgr), LangOpts(LangOpts), Target(Target),
+      HeaderInfo(HeaderInfo), BuiltinIncludeDir(0), CompilingModule(0),
+      SourceModule(0) {
   IntrusiveRefCntPtr<DiagnosticIDs> DiagIDs(new DiagnosticIDs);
   Diags = IntrusiveRefCntPtr<DiagnosticsEngine>(
             new DiagnosticsEngine(DiagIDs, new DiagnosticOptions));
   Diags->setClient(new ForwardingDiagnosticConsumer(DC),
                    /*ShouldOwnClient=*/true);
-  SourceMgr = new SourceManager(*Diags, FileMgr);
+  Diags->setSourceManager(&SourceMgr);
 }
 
 ModuleMap::~ModuleMap() {
@@ -103,8 +103,6 @@ ModuleMap::~ModuleMap() {
        I != IEnd; ++I) {
     delete I->getValue();
   }
-  
-  delete SourceMgr;
 }
 
 void ModuleMap::setTarget(const TargetInfo &Target) {
@@ -224,7 +222,7 @@ ModuleMap::findModuleForHeader(const FileEntry *File,
   // frameworks moving from top-level frameworks to embedded frameworks tend
   // to be symlinked from the top-level location to the embedded location,
   // and we need to resolve lookups as if we had found the embedded location.
-  StringRef DirName = SourceMgr->getFileManager().getCanonicalName(Dir);
+  StringRef DirName = SourceMgr.getFileManager().getCanonicalName(Dir);
 
   // Keep walking up the directory hierarchy, looking for a directory with
   // an umbrella header.
@@ -301,7 +299,7 @@ ModuleMap::findModuleForHeader(const FileEntry *File,
       break;
     
     // Resolve the parent path to a directory entry.
-    Dir = SourceMgr->getFileManager().getDirectory(DirName);
+    Dir = SourceMgr.getFileManager().getDirectory(DirName);
   } while (Dir);
   
   return KnownHeader();
@@ -375,7 +373,7 @@ bool ModuleMap::isHeaderInUnavailableModule(const FileEntry *Header) const {
       break;
     
     // Resolve the parent path to a directory entry.
-    Dir = SourceMgr->getFileManager().getDirectory(DirName);
+    Dir = SourceMgr.getFileManager().getDirectory(DirName);
   } while (Dir);
   
   return false;
@@ -480,7 +478,7 @@ ModuleMap::inferFrameworkModule(StringRef ModuleName,
   if (Module *Mod = lookupModuleQualified(ModuleName, Parent))
     return Mod;
   
-  FileManager &FileMgr = SourceMgr->getFileManager();
+  FileManager &FileMgr = SourceMgr.getFileManager();
 
   // If the framework has a parent path from which we're allowed to infer
   // a framework module, do so.
@@ -492,7 +490,7 @@ ModuleMap::inferFrameworkModule(StringRef ModuleName,
     // top-level framework, and we need to infer as if we were naming the
     // top-level framework.
     StringRef FrameworkDirName
-      = SourceMgr->getFileManager().getCanonicalName(FrameworkDir);
+      = SourceMgr.getFileManager().getCanonicalName(FrameworkDir);
 
     bool canInfer = false;
     if (llvm::sys::path::has_parent_path(FrameworkDirName)) {
@@ -654,11 +652,11 @@ void ModuleMap::addHeader(Module *Mod, const FileEntry *Header,
 
 const FileEntry *
 ModuleMap::getContainingModuleMapFile(Module *Module) const {
-  if (Module->DefinitionLoc.isInvalid() || !SourceMgr)
+  if (Module->DefinitionLoc.isInvalid())
     return 0;
 
-  return SourceMgr->getFileEntryForID(
-           SourceMgr->getFileID(Module->DefinitionLoc));
+  return SourceMgr.getFileEntryForID(
+           SourceMgr.getFileID(Module->DefinitionLoc));
 }
 
 void ModuleMap::dump() {
@@ -775,6 +773,7 @@ namespace clang {
       EndOfFile,
       HeaderKeyword,
       Identifier,
+      Exclaim,
       ExcludeKeyword,
       ExplicitKeyword,
       ExportKeyword,
@@ -967,6 +966,10 @@ retry:
       
   case tok::star:
     Tok.Kind = MMToken::Star;
+    break;
+      
+  case tok::exclaim:
+    Tok.Kind = MMToken::Exclaim;
     break;
       
   case tok::string_literal: {
@@ -1394,8 +1397,11 @@ void ModuleMapParser::parseExternModuleDecl() {
 ///     'requires' feature-list
 ///
 ///   feature-list:
-///     identifier ',' feature-list
-///     identifier
+///     feature ',' feature-list
+///     feature
+///
+///   feature:
+///     '!'[opt] identifier
 void ModuleMapParser::parseRequiresDecl() {
   assert(Tok.is(MMToken::RequiresKeyword));
 
@@ -1404,6 +1410,12 @@ void ModuleMapParser::parseRequiresDecl() {
 
   // Parse the feature-list.
   do {
+    bool RequiredState = true;
+    if (Tok.is(MMToken::Exclaim)) {
+      RequiredState = false;
+      consumeToken();
+    }
+
     if (!Tok.is(MMToken::Identifier)) {
       Diags.Report(Tok.getLocation(), diag::err_mmap_expected_feature);
       HadError = true;
@@ -1415,7 +1427,8 @@ void ModuleMapParser::parseRequiresDecl() {
     consumeToken();
 
     // Add this feature.
-    ActiveModule->addRequirement(Feature, Map.LangOpts, *Map.Target);
+    ActiveModule->addRequirement(Feature, RequiredState,
+                                 Map.LangOpts, *Map.Target);
 
     if (!Tok.is(MMToken::Comma))
       break;
@@ -2079,6 +2092,7 @@ bool ModuleMapParser::parseModuleMapFile() {
     case MMToken::Comma:
     case MMToken::ConfigMacros:
     case MMToken::Conflict:
+    case MMToken::Exclaim:
     case MMToken::ExcludeKeyword:
     case MMToken::ExportKeyword:
     case MMToken::HeaderKeyword:
@@ -2110,15 +2124,15 @@ bool ModuleMap::parseModuleMapFile(const FileEntry *File, bool IsSystem) {
     return Known->second;
 
   assert(Target != 0 && "Missing target information");
-  FileID ID = SourceMgr->createFileID(File, SourceLocation(), SrcMgr::C_User);
-  const llvm::MemoryBuffer *Buffer = SourceMgr->getBuffer(ID);
+  FileID ID = SourceMgr.createFileID(File, SourceLocation(), SrcMgr::C_User);
+  const llvm::MemoryBuffer *Buffer = SourceMgr.getBuffer(ID);
   if (!Buffer)
     return ParsedModuleMap[File] = true;
   
   // Parse this module map file.
-  Lexer L(ID, SourceMgr->getBuffer(ID), *SourceMgr, MMapLangOpts);
+  Lexer L(ID, SourceMgr.getBuffer(ID), SourceMgr, MMapLangOpts);
   Diags->getClient()->BeginSourceFile(MMapLangOpts);
-  ModuleMapParser Parser(L, *SourceMgr, Target, *Diags, *this, File->getDir(),
+  ModuleMapParser Parser(L, SourceMgr, Target, *Diags, *this, File->getDir(),
                          BuiltinIncludeDir, IsSystem);
   bool Result = Parser.parseModuleMapFile();
   Diags->getClient()->EndSourceFile();

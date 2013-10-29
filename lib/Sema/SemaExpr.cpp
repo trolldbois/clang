@@ -2257,6 +2257,14 @@ Sema::LookupInObjCMethod(LookupResult &Lookup, Scope *S,
         return ExprError();
 
       MarkAnyDeclReferenced(Loc, IV, true);
+      if (!IV->getBackingIvarReferencedInAccessor()) {
+        // Mark this ivar 'referenced' in this method, if it is a backing ivar
+        // of a property and current method is one of its property accessor.
+        const ObjCPropertyDecl *PDecl;
+        const ObjCIvarDecl *BIV = GetIvarBackingPropertyAccessor(CurMethod, PDecl);
+        if (BIV && BIV == IV)
+          IV->setBackingIvarReferencedInAccessor(true);
+      }
       
       ObjCMethodFamily MF = CurMethod->getMethodFamily();
       if (MF != OMF_init && MF != OMF_dealloc && MF != OMF_finalize &&
@@ -6963,12 +6971,63 @@ static void diagnoseStringPlusInt(Sema &Self, SourceLocation OpLoc,
   // Only print a fixit for "str" + int, not for int + "str".
   if (IndexExpr == RHSExpr) {
     SourceLocation EndLoc = Self.PP.getLocForEndOfToken(RHSExpr->getLocEnd());
-    Self.Diag(OpLoc, diag::note_string_plus_int_silence)
+    Self.Diag(OpLoc, diag::note_string_plus_scalar_silence)
         << FixItHint::CreateInsertion(LHSExpr->getLocStart(), "&")
         << FixItHint::CreateReplacement(SourceRange(OpLoc), "[")
         << FixItHint::CreateInsertion(EndLoc, "]");
   } else
-    Self.Diag(OpLoc, diag::note_string_plus_int_silence);
+    Self.Diag(OpLoc, diag::note_string_plus_scalar_silence);
+}
+
+/// \brief Emit a warning when adding a char literal to a string.
+static void diagnoseStringPlusChar(Sema &Self, SourceLocation OpLoc,
+                                   Expr *LHSExpr, Expr *RHSExpr) {
+  const DeclRefExpr *StringRefExpr =
+      dyn_cast<DeclRefExpr>(LHSExpr->IgnoreImpCasts());
+  const CharacterLiteral *CharExpr =
+      dyn_cast<CharacterLiteral>(RHSExpr->IgnoreImpCasts());
+  if (!StringRefExpr) {
+    StringRefExpr = dyn_cast<DeclRefExpr>(RHSExpr->IgnoreImpCasts());
+    CharExpr = dyn_cast<CharacterLiteral>(LHSExpr->IgnoreImpCasts());
+  }
+
+  if (!CharExpr || !StringRefExpr)
+    return;
+
+  const QualType StringType = StringRefExpr->getType();
+
+  // Return if not a PointerType.
+  if (!StringType->isAnyPointerType())
+    return;
+
+  // Return if not a CharacterType.
+  if (!StringType->getPointeeType()->isAnyCharacterType())
+    return;
+
+  ASTContext &Ctx = Self.getASTContext();
+  SourceRange DiagRange(LHSExpr->getLocStart(), RHSExpr->getLocEnd());
+
+  const QualType CharType = CharExpr->getType();
+  if (!CharType->isAnyCharacterType() &&
+      CharType->isIntegerType() &&
+      llvm::isUIntN(Ctx.getCharWidth(), CharExpr->getValue())) {
+    Self.Diag(OpLoc, diag::warn_string_plus_char)
+        << DiagRange << Ctx.CharTy;
+  } else {
+    Self.Diag(OpLoc, diag::warn_string_plus_char)
+        << DiagRange << CharExpr->getType();
+  }
+
+  // Only print a fixit for str + char, not for char + str.
+  if (isa<CharacterLiteral>(RHSExpr->IgnoreImpCasts())) {
+    SourceLocation EndLoc = Self.PP.getLocForEndOfToken(RHSExpr->getLocEnd());
+    Self.Diag(OpLoc, diag::note_string_plus_scalar_silence)
+        << FixItHint::CreateInsertion(LHSExpr->getLocStart(), "&")
+        << FixItHint::CreateReplacement(SourceRange(OpLoc), "[")
+        << FixItHint::CreateInsertion(EndLoc, "]");
+  } else {
+    Self.Diag(OpLoc, diag::note_string_plus_scalar_silence);
+  }
 }
 
 /// \brief Emit error when two pointers are incompatible.
@@ -6997,9 +7056,11 @@ QualType Sema::CheckAdditionOperands( // C99 6.5.6
   if (LHS.isInvalid() || RHS.isInvalid())
     return QualType();
 
-  // Diagnose "string literal" '+' int.
-  if (Opc == BO_Add)
+  // Diagnose "string literal" '+' int and string '+' "char literal".
+  if (Opc == BO_Add) {
     diagnoseStringPlusInt(*this, Loc, LHS.get(), RHS.get());
+    diagnoseStringPlusChar(*this, Loc, LHS.get(), RHS.get());
+  }
 
   // handle the common case first (both operands are arithmetic).
   if (!compType.isNull() && compType->isArithmeticType()) {
@@ -10962,13 +11023,22 @@ void Sema::PopExpressionEvaluationContext() {
   ExpressionEvaluationContextRecord& Rec = ExprEvalContexts.back();
 
   if (!Rec.Lambdas.empty()) {
-    if (Rec.isUnevaluated()) {
-      // C++11 [expr.prim.lambda]p2:
-      //   A lambda-expression shall not appear in an unevaluated operand
-      //   (Clause 5).
+    if (Rec.isUnevaluated() || Rec.Context == ConstantEvaluated) {
+      unsigned D;
+      if (Rec.isUnevaluated()) {
+        // C++11 [expr.prim.lambda]p2:
+        //   A lambda-expression shall not appear in an unevaluated operand
+        //   (Clause 5).
+        D = diag::err_lambda_unevaluated_operand;
+      } else {
+        // C++1y [expr.const]p2:
+        //   A conditional-expression e is a core constant expression unless the
+        //   evaluation of e, following the rules of the abstract machine, would
+        //   evaluate [...] a lambda-expression.
+        D = diag::err_lambda_in_constant_expression;
+      }
       for (unsigned I = 0, N = Rec.Lambdas.size(); I != N; ++I)
-        Diag(Rec.Lambdas[I]->getLocStart(), 
-             diag::err_lambda_unevaluated_operand);
+        Diag(Rec.Lambdas[I]->getLocStart(), D);
     } else {
       // Mark the capture expressions odr-used. This was deferred
       // during lambda expression creation.

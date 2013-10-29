@@ -105,10 +105,12 @@
 // RUN:     -falign-functions -falign-functions=2 -fno-align-functions        \
 // RUN:     -fasynchronous-unwind-tables -fno-asynchronous-unwind-tables      \
 // RUN:     -fbuiltin -fno-builtin                                            \
+// RUN:     -fdiagnostics-show-location=once                                  \
 // RUN:     -ffloat-store -fno-float-store                                    \
 // RUN:     -feliminate-unused-debug-types -fno-eliminate-unused-debug-types  \
 // RUN:     -fgcse -fno-gcse                                                  \
 // RUN:     -fident -fno-ident                                                \
+// RUN:     -fimplicit-templates -fno-implicit-templates                      \
 // RUN:     -fivopts -fno-ivopts                                              \
 // RUN:     -fnon-call-exceptions -fno-non-call-exceptions                    \
 // RUN:     -fpermissive -fno-permissive                                      \

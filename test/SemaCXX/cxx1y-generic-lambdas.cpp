@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -std=c++1y -verify -fsyntax-only -fblocks -emit-llvm -o - %s
+// RUN: %clang_cc1 -std=c++1y -verify -fsyntax-only -fblocks -emit-llvm-only %s
 // DONTRUNYET: %clang_cc1 -std=c++1y -verify -fsyntax-only -fblocks -fdelayed-template-parsing %s -DDELAYED_TEMPLATE_PARSING
 // DONTRUNYET: %clang_cc1 -std=c++1y -verify -fsyntax-only -fblocks -fms-extensions %s -DMS_EXTENSIONS
 // DONTRUNYET: %clang_cc1 -std=c++1y -verify -fsyntax-only -fblocks -fdelayed-template-parsing -fms-extensions %s -DMS_EXTENSIONS -DDELAYED_TEMPLATE_PARSING
@@ -53,7 +53,10 @@ int test() {
   char (*fc)(char) = L; //expected-error{{no viable conversion}}
   double (*fd)(double) = L; //expected-error{{no viable conversion}}
 }
-
+{
+  int* (*fp)(int*) = [](auto *a) -> auto* { return a; };
+  fp(0);
+}
 }
 
 namespace more_converion_to_ptr_to_function_tests {
@@ -585,6 +588,50 @@ template<class T> void foo(T) {
 template void foo(int); 
 } // end ns nested_generic_lambdas_123
 
+namespace nested_fptr_235 {
+int test()
+{
+  auto L = [](auto b) {
+    return [](auto a) ->decltype(a) { return a; };
+  };
+  int (*fp)(int) = L(8);
+  fp(5);
+  L(3);
+  char (*fc)(char) = L('a');
+  fc('b');
+  L('c');
+  double (*fd)(double) = L(3.14);
+  fd(3.14);
+  fd(6.26);
+  return 0;
+}
+int run = test();
+}
+
+
+namespace fptr_with_decltype_return_type {
+template<class F, class ... Ts> using FirstType = F;
+template<class F, class ... Rest> F& FirstArg(F& f, Rest& ... r) { return f; };
+template<class ... Ts> auto vfun(Ts&& ... ts) {
+  print(ts...);
+  return FirstArg(ts...);
+}
+int test()
+{
+ {
+   auto L = [](auto ... As) {
+    return [](auto b) ->decltype(b) {   
+      vfun([](decltype(As) a) -> decltype(a) { return a; } ...)(FirstType<decltype(As)...>{});
+      return decltype(b){};
+    };
+   };
+   auto LL = L(1, 'a', 3.14, "abc");
+   LL("dim");
+ }
+  return 0;
+}
+int run = test();
+}
 
 } // end ns nested_non_capturing_lambda_tests
 
