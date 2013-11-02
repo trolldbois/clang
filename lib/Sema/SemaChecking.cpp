@@ -4779,6 +4779,10 @@ static bool HasEnumType(Expr *E) {
 }
 
 static void CheckTrivialUnsignedComparison(Sema &S, BinaryOperator *E) {
+  // Disable warning in template instantiations.
+  if (!S.ActiveTemplateInstantiations.empty())
+    return;
+
   BinaryOperatorKind op = E->getOpcode();
   if (E->isValueDependent())
     return;
@@ -4806,6 +4810,10 @@ static void DiagnoseOutOfRangeComparison(Sema &S, BinaryOperator *E,
                                          Expr *Constant, Expr *Other,
                                          llvm::APSInt Value,
                                          bool RhsConstant) {
+  // Disable warning in template instantiations.
+  if (!S.ActiveTemplateInstantiations.empty())
+    return;
+
   // 0 values are handled later by CheckTrivialUnsignedComparison().
   if (Value == 0)
     return;
