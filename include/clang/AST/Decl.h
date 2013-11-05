@@ -849,18 +849,19 @@ public:
            getStorageClass() == SC_PrivateExtern;
   }
 
-  /// hasGlobalStorage - Returns true for all variables that do not
-  ///  have local storage.  This includs all global variables as well
-  ///  as static variables declared within a function.
+  /// \brief Returns true for all variables that do not have local storage.
+  ///
+  /// This includes all global variables as well as static variables declared
+  /// within a function.
   bool hasGlobalStorage() const { return !hasLocalStorage(); }
 
-  /// \brief Get the storage duration of this variable, per C++ [basid.stc].
+  /// \brief Get the storage duration of this variable, per C++ [basic.stc].
   StorageDuration getStorageDuration() const {
     return hasLocalStorage() ? SD_Automatic :
            getTSCSpec() ? SD_Thread : SD_Static;
   }
 
-  /// Compute the language linkage.
+  /// \brief Compute the language linkage.
   LanguageLinkage getLanguageLinkage() const;
 
   /// \brief Determines whether this variable is a variable with
@@ -1792,6 +1793,11 @@ public:
   ///    An implementation is allowed to omit a call to a replaceable global
   ///    allocation function. [...]
   bool isReplaceableGlobalAllocationFunction() const;
+
+  /// \brief Determine whether this function is a sized global deallocation
+  /// function in C++1y. If so, find and return the corresponding unsized
+  /// deallocation function.
+  FunctionDecl *getCorrespondingUnsizedGlobalDeallocationFunction() const;
 
   /// Compute the language linkage.
   LanguageLinkage getLanguageLinkage() const;

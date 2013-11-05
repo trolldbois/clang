@@ -10,6 +10,7 @@
 // CHECK-DAG: @_ZN5test312_GLOBAL__N_11DD2Ev = alias internal bitcast {{.*}} @_ZN5test312_GLOBAL__N_11CD2Ev
 // CHECK-DAG: @_ZN5test312_GLOBAL__N_11CD1Ev = alias internal {{.*}} @_ZN5test312_GLOBAL__N_11CD2Ev
 // CHECK-DAG: @_ZN6PR752617allocator_derivedD1Ev = alias weak_odr void (%"struct.PR7526::allocator_derived"*)* @_ZN6PR752617allocator_derivedD2Ev
+// CHECK-DAG: @_ZN6test106OptionD1Ev = alias weak_odr void (%"struct.test10::Option"*)* @_ZN6test106OptionD2Ev
 
 struct A {
   int a;
@@ -362,6 +363,21 @@ namespace test9 {
   }
   // CHECK: call void @_ZN5test97ArgTypeD1Ev(%"struct.test9::ArgType"* %
   // CHECK: call void @_ZN5test92f2Ev()
+}
+
+namespace test10 {
+  // We used to crash trying to replace _ZN6test106OptionD1Ev with
+  // _ZN6test106OptionD2Ev twice. For now check that we don't try and produce
+  // an alias instead (check at the top of the file).
+  struct Option {
+    virtual ~Option() {}
+  };
+  template <class DataType> class opt : public Option {};
+  template class opt<int>;
+  bool handleOccurrence() {
+    Option x;
+    return true;
+  }
 }
 
 // Checks from test3:
