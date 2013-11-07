@@ -337,7 +337,9 @@ unsigned ContinuationIndenter::addTokenOnNewLine(LineState &State,
   if (Current.is(tok::l_brace) && Current.BlockKind == BK_Block) {
     State.Column = State.FirstIndent;
   } else if (Current.isOneOf(tok::r_brace, tok::r_square)) {
-    if (Current.closesBlockTypeList(Style))
+    if (Current.closesBlockTypeList(Style) ||
+        (Current.MatchingParen &&
+         Current.MatchingParen->BlockKind == BK_BracedInit))
       State.Column = State.Stack[State.Stack.size() - 2].LastSpace;
     else
       State.Column = State.FirstIndent;
@@ -497,7 +499,8 @@ unsigned ContinuationIndenter::moveStateToNextToken(LineState &State,
   // is special cased.
   bool SkipFirstExtraIndent =
       (Previous && (Previous->opensScope() || Previous->is(tok::kw_return) ||
-                    Previous->getPrecedence() == prec::Assignment));
+                    Previous->getPrecedence() == prec::Assignment ||
+                    Previous->Type == TT_ObjCMethodExpr));
   for (SmallVectorImpl<prec::Level>::const_reverse_iterator
            I = Current.FakeLParens.rbegin(),
            E = Current.FakeLParens.rend();
