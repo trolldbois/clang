@@ -125,8 +125,11 @@ bool ContinuationIndenter::mustBreak(const LineState &State) {
   if (Previous.is(tok::semi) && State.LineContainsContinuedForLoopSection)
     return true;
   if ((startsNextParameter(Current, Style) || Previous.is(tok::semi) ||
-       Current.is(tok::question) ||
-       (Current.Type == TT_ConditionalExpr && Previous.isNot(tok::question))) &&
+       (Style.BreakBeforeTernaryOperators &&
+        (Current.is(tok::question) || (Current.Type == TT_ConditionalExpr &&
+                                       Previous.isNot(tok::question)))) ||
+       (!Style.BreakBeforeTernaryOperators &&
+        (Previous.is(tok::question) || Previous.Type == TT_ConditionalExpr))) &&
       State.Stack.back().BreakBeforeParameter && !Current.isTrailingComment() &&
       !Current.isOneOf(tok::r_paren, tok::r_brace))
     return true;
@@ -274,7 +277,7 @@ void ContinuationIndenter::addTokenOnCurrentLine(LineState &State, bool DryRun,
     // Treat the condition inside an if as if it was a second function
     // parameter, i.e. let nested calls have a continuation indent.
     State.Stack.back().LastSpace = State.Column + 1; // 1 is length of "(".
-  else if (Previous.is(tok::comma))
+  else if (Previous.is(tok::comma) || Previous.Type == TT_ObjCMethodExpr)
     State.Stack.back().LastSpace = State.Column;
   else if ((Previous.Type == TT_BinaryOperator ||
             Previous.Type == TT_ConditionalExpr ||
@@ -357,7 +360,9 @@ unsigned ContinuationIndenter::addTokenOnNewLine(LineState &State,
     } else {
       State.Column = State.Stack.back().CallContinuation;
     }
-  } else if (Current.Type == TT_ConditionalExpr) {
+  } else if (State.Stack.back().QuestionColumn != 0 &&
+             (Current.Type == TT_ConditionalExpr ||
+              Previous.Type == TT_ConditionalExpr)) {
     State.Column = State.Stack.back().QuestionColumn;
   } else if (Previous.is(tok::comma) && State.Stack.back().VariablePos != 0) {
     State.Column = State.Stack.back().VariablePos;
@@ -370,7 +375,11 @@ unsigned ContinuationIndenter::addTokenOnNewLine(LineState &State,
                State.Line->StartsDefinition))) {
     State.Column = State.Stack.back().Indent;
   } else if (Current.Type == TT_ObjCSelectorName) {
-    if (State.Stack.back().ColonPos > Current.ColumnWidth) {
+    if (State.Stack.back().ColonPos == 0) {
+      State.Stack.back().ColonPos =
+          State.Stack.back().Indent + Current.LongestObjCSelectorName;
+      State.Column = State.Stack.back().ColonPos - Current.ColumnWidth;
+    } else if (State.Stack.back().ColonPos > Current.ColumnWidth) {
       State.Column = State.Stack.back().ColonPos - Current.ColumnWidth;
     } else {
       State.Column = State.Stack.back().Indent;
@@ -398,14 +407,15 @@ unsigned ContinuationIndenter::addTokenOnNewLine(LineState &State,
       State.Column += Style.ContinuationIndentWidth;
   }
 
-  if (Current.is(tok::question))
-    State.Stack.back().BreakBeforeParameter = true;
   if ((Previous.isOneOf(tok::comma, tok::semi) &&
        !State.Stack.back().AvoidBinPacking) ||
       Previous.Type == TT_BinaryOperator)
     State.Stack.back().BreakBeforeParameter = false;
   if (Previous.Type == TT_TemplateCloser && State.ParenLevel == 0)
     State.Stack.back().BreakBeforeParameter = false;
+  if (Current.is(tok::question) ||
+      (PreviousNonComment && PreviousNonComment->is(tok::question)))
+    State.Stack.back().BreakBeforeParameter = true;
 
   if (!DryRun) {
     unsigned Newlines = 1;
@@ -429,10 +439,12 @@ unsigned ContinuationIndenter::addTokenOnNewLine(LineState &State,
   for (unsigned i = 0, e = State.Stack.size() - 1; i != e; ++i) {
     State.Stack[i].BreakBeforeParameter = true;
   }
-  const FormatToken *TokenBefore = Current.getPreviousNonComment();
-  if (TokenBefore && !TokenBefore->isOneOf(tok::comma, tok::semi) &&
-      TokenBefore->Type != TT_TemplateCloser &&
-      TokenBefore->Type != TT_BinaryOperator && !TokenBefore->opensScope())
+  if (PreviousNonComment &&
+      !PreviousNonComment->isOneOf(tok::comma, tok::semi) &&
+      PreviousNonComment->Type != TT_TemplateCloser &&
+      PreviousNonComment->Type != TT_BinaryOperator &&
+      Current.Type != TT_BinaryOperator && 
+      !PreviousNonComment->opensScope())
     State.Stack.back().BreakBeforeParameter = true;
 
   // If we break after { or the [ of an array initializer, we should also break
@@ -465,7 +477,10 @@ unsigned ContinuationIndenter::moveStateToNextToken(LineState &State,
   if (Current.Type == TT_ArraySubscriptLSquare &&
       State.Stack.back().StartOfArraySubscripts == 0)
     State.Stack.back().StartOfArraySubscripts = State.Column;
-  if (Current.is(tok::question))
+  if ((Current.is(tok::question) && Style.BreakBeforeTernaryOperators) ||
+      (Current.getPreviousNonComment() && Current.isNot(tok::colon) &&
+       Current.getPreviousNonComment()->is(tok::question) &&
+       !Style.BreakBeforeTernaryOperators))
     State.Stack.back().QuestionColumn = State.Column;
   if (!Current.opensScope() && !Current.closesScope())
     State.LowestLevelOnLine =
