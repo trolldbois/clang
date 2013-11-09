@@ -787,6 +787,26 @@ TEST_F(FormatTest, UnderstandsSingleLineComments) {
                    "// first\n"
                    " // at start\n"
                    "otherLine();   // comment"));
+  verifyFormat("f(); // comment\n"
+               "// first\n"
+               "// at start\n"
+               "otherLine();");
+  EXPECT_EQ("f(); // comment\n"
+            "// first\n"
+            "// at start\n"
+            "otherLine();",
+            format("f();   // comment\n"
+                   "// first\n"
+                   " // at start\n"
+                   "otherLine();"));
+  EXPECT_EQ("f(); // comment\n"
+            "     // first\n"
+            "// at start\n"
+            "otherLine();",
+            format("f();   // comment\n"
+                   " // first\n"
+                   "// at start\n"
+                   "otherLine();"));
 }
 
 TEST_F(FormatTest, CanFormatCommentsLocally) {
@@ -3615,6 +3635,13 @@ TEST_F(FormatTest, AlwaysBreakBeforeMultilineStrings) {
             format("x = \"a\\\n"
                    "b\\\n"
                    "c\";",
+                   Break));
+
+  // Exempt ObjC strings for now.
+  EXPECT_EQ("NSString *const kString = @\"aaaa\"\n"
+            "                           \"bbbb\";",
+            format("NSString *const kString = @\"aaaa\"\n"
+                   "\"bbbb\";",
                    Break));
 }
 
