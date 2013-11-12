@@ -3220,7 +3220,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
            options::OPT_fuse_cxa_atexit, options::OPT_fno_use_cxa_atexit,
            getToolChain().getTriple().getOS() != llvm::Triple::Cygwin &&
                getToolChain().getTriple().getOS() != llvm::Triple::MinGW32 &&
-               getToolChain().getArch() != llvm::Triple::hexagon) ||
+               getToolChain().getArch() != llvm::Triple::hexagon &&
+               getToolChain().getArch() != llvm::Triple::xcore) ||
       KernelOrKext)
     CmdArgs.push_back("-fno-use-cxa-atexit");
 
@@ -3296,6 +3297,16 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
+  // When ObjectiveC legacy runtime is in effect on MacOSX,
+  // turn on the option to do Array/Dictionary subscripting
+  // by default.
+  if (getToolChain().getTriple().getArch() == llvm::Triple::x86 &&
+      getToolChain().getTriple().isMacOSX() &&
+      !getToolChain().getTriple().isMacOSXVersionLT(10, 7) &&
+      objcRuntime.getKind() == ObjCRuntime::FragileMacOSX &&
+      objcRuntime.isNeXTFamily())
+    CmdArgs.push_back("-fobjc-subscripting-legacy-runtime");
+  
   // -fencode-extended-block-signature=1 is default.
   if (getToolChain().IsEncodeExtendedBlockSignatureDefault()) {
     CmdArgs.push_back("-fencode-extended-block-signature");

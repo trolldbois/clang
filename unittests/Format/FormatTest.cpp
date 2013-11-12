@@ -985,6 +985,11 @@ TEST_F(FormatTest, SplitsLongCxxComments) {
             format("//Even if it makes the line exceed the column limit",
                    getLLVMStyleWithColumns(51)));
   EXPECT_EQ("//--But not here", format("//--But not here", getLLVMStyle()));
+
+  EXPECT_EQ("// aa bb cc dd",
+            format("// aa bb             cc dd                   ",
+                   getLLVMStyleWithColumns(15)));
+
   EXPECT_EQ("// A comment before\n"
             "// a macro\n"
             "// definition\n"
@@ -1005,6 +1010,14 @@ TEST_F(FormatTest, SplitsLongCxxComments) {
   EXPECT_EQ("//\t aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             format("//\t aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                    getLLVMStyleWithColumns(20)));
+  EXPECT_EQ(
+      "#define XXX // a b c d\n"
+      "            // e f g h",
+      format("#define XXX // a b c d e f g h", getLLVMStyleWithColumns(22)));
+  EXPECT_EQ(
+      "#define XXX // q w e r\n"
+      "            // t y u i",
+      format("#define XXX //q w e r t y u i", getLLVMStyleWithColumns(22)));
 }
 
 TEST_F(FormatTest, DontSplitLineCommentsWithEscapedNewlines) {
@@ -1244,6 +1257,17 @@ TEST_F(FormatTest, SplitsLongLinesInComments) {
                    "      \n"
                    "               \n"
                    "      */\n"));
+
+  EXPECT_EQ("/* a a */",
+            format("/* a a            */", getLLVMStyleWithColumns(15)));
+  EXPECT_EQ("/* a a bc  */",
+            format("/* a a            bc  */", getLLVMStyleWithColumns(15)));
+  EXPECT_EQ("/* aaa aaa\n"
+            " * aaaaa */",
+            format("/* aaa aaa aaaaa       */", getLLVMStyleWithColumns(15)));
+  EXPECT_EQ("/* aaa aaa\n"
+            " * aaaaa     */",
+            format("/* aaa aaa aaaaa     */", getLLVMStyleWithColumns(15)));
 }
 
 TEST_F(FormatTest, SplitsLongLinesInCommentsInPreprocessor) {
