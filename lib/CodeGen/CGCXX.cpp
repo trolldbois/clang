@@ -146,13 +146,14 @@ bool CodeGenModule::TryEmitDefinitionAsAlias(GlobalDecl AliasDecl,
     /// how aliases work.
     if (Ref->isDeclaration())
       return true;
-
-    // Don't create an alias to a linker weak symbol unless we know we can do
-    // that in every TU. This avoids producing different COMDATs in different
-    // TUs.
-    if (llvm::GlobalValue::isWeakForLinker(TargetLinkage))
-      return true;
   }
+
+  // Don't create an alias to a linker weak symbol. This avoids producing
+  // different COMDATs in different TUs. Another option would be to
+  // output the alias both for weak_odr and linkonce_odr, but that
+  // requires explicit comdat support in the IL.
+  if (llvm::GlobalValue::isWeakForLinker(TargetLinkage))
+    return true;
 
   // Create the alias with no name.
   llvm::GlobalAlias *Alias = 
@@ -262,15 +263,6 @@ CodeGenModule::GetAddrOfCXXDestructor(const CXXDestructorDecl *dtor,
                                       CXXDtorType dtorType,
                                       const CGFunctionInfo *fnInfo,
                                       llvm::FunctionType *fnType) {
-  // If the class has no virtual bases, then the complete and base destructors
-  // are equivalent, for all C++ ABIs supported by clang.  We can save on code
-  // size by calling the base dtor directly, especially if we'd have to emit a
-  // thunk otherwise.
-  // FIXME: We should do this for Itanium, after verifying that nothing breaks.
-  if (dtorType == Dtor_Complete && dtor->getParent()->getNumVBases() == 0 &&
-      getCXXABI().useThunkForDtorVariant(dtor, Dtor_Complete))
-    dtorType = Dtor_Base;
-
   GlobalDecl GD(dtor, dtorType);
 
   StringRef name = getMangledName(GD);
