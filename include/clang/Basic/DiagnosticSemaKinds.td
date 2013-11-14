@@ -2435,8 +2435,18 @@ def warn_objc_requires_super_protocol : Warning<
 def note_protocol_decl : Note<
   "protocol is declared here">;
 
+// objc_bridge attribute diagnostics.
 def err_ns_bridged_not_interface : Error<
   "parameter of 'ns_bridged' attribute does not name an Objective-C class">;
+def err_objc_bridge_not_id : Error<
+  "parameter of 'objc_bridge' attribute must be a single name of an Objective-C class">;
+def err_objc_bridge_attribute : Error<
+  "'objc_bridge' attribute must be put on a typedef only">;
+def err_objc_bridge_not_cftype : Error<
+  "'objc_bridge' attribute must be applied to definition of CF types">;
+  
+def err_objc_bridge_not_pointertype : Error<
+  "'objc_bridge' attribute must be applied to a pointer type">;
 
 // Function Parameter Semantic Analysis.
 def err_param_with_void_type : Error<"argument may not have 'void' type">;
@@ -5718,6 +5728,9 @@ def ext_no_named_members_in_struct_union : Extension<
 def warn_zero_size_struct_union_compat : Warning<"%select{|empty }0"
   "%select{struct|union}1 has size 0 in C, %select{size 1|non-zero size}2 in C++">,
   InGroup<CXXCompat>, DefaultIgnore;
+def warn_zero_size_struct_union_in_extern_c : Warning<"%select{|empty }0"
+  "%select{struct|union}1 has size 0 in C, %select{size 1|non-zero size}2 in C++">,
+  InGroup<ExternCCompat>;
 } // End of general sema category.
 
 // inline asm.
