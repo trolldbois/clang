@@ -820,6 +820,14 @@ long long clang_Cursor_getOffsetOfField(CXCursor C) {
   if (clang_isDeclaration(C.kind)) {
     const Decl *D = cxcursor::getCursorDecl(C);
     ASTContext &Ctx = cxcursor::getCursorContext(C);
+    // we need to avoid invalid types
+    CXType T = clang_getCursorType(C);
+    QualType RT = GetQualType(T);
+    if (RT->isIncompleteType())
+      return -1;
+    if (RT->isDependentType())
+      return -1;
+    // proceed with the offset calculation
     if (const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(D))
       return Ctx.getFieldOffset(FD);
     if (const IndirectFieldDecl *IFD = dyn_cast_or_null<IndirectFieldDecl>(D))

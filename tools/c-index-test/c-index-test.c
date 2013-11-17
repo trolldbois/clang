@@ -1266,7 +1266,12 @@ static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
       {
         long long Offset = clang_Type_getOffsetOf(clang_getCursorType(Root),
                                                   FieldName);
-        printf(" [offsetof=%lld]", Offset);
+        long long Offset2 = clang_Cursor_getOffsetOfField(cursor);
+        if (Offset == Offset2){
+            printf(" [offsetof=%lld]", Offset);
+        } else {
+            printf(" [offsetof=%lld/%lld]", Offset, Offset2);
+        }
       }
     }
   }
