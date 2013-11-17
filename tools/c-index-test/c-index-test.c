@@ -1156,6 +1156,12 @@ static void PrintTypeAndTypeKind(CXType T, const char *Format) {
   clang_disposeString(TypeKindSpelling);
 }
 
+
+static enum CXFieldVisitResult FieldVisitor(CXCursor C, CXClientData client_data) {
+    (*(int *) client_data)+=1;
+    return CXFieldVisit_Continue;
+}
+
 static enum CXChildVisitResult PrintType(CXCursor cursor, CXCursor p,
                                          CXClientData d) {
   if (!clang_isInvalid(clang_getCursorKind(cursor))) {
@@ -1204,6 +1210,15 @@ static enum CXChildVisitResult PrintType(CXCursor cursor, CXCursor p,
     }
     /* Print if this is a non-POD type. */
     printf(" [isPOD=%d]", clang_isPODType(T));
+    /* Print the number of fields if they exist. */
+    {
+      int numFields = 0;
+      if (clang_Type_visitFields(T, FieldVisitor, &numFields)){
+        if (numFields != 0) {
+          printf(" [nbFields=%d]", numFields);
+        }
+      }
+    }
 
     printf("\n");
   }
