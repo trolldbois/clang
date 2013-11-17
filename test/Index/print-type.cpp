@@ -36,6 +36,7 @@ void foo(int i, int incomplete_array[]) { int variable_array[i]; }
 
 struct Blob {
   int i;
+  int j;
 };
 int Blob::*member_pointer;
 
@@ -46,7 +47,7 @@ int Blob::*member_pointer;
 // CHECK: FieldDecl=t:5:5 (Definition) [type=T] [typekind=Unexposed] [canonicaltype=type-parameter-0-0] [canonicaltypekind=Unexposed] [isPOD=0]
 // CHECK: TypeRef=T:3:19 [type=T] [typekind=Unexposed] [canonicaltype=type-parameter-0-0] [canonicaltypekind=Unexposed] [isPOD=0]
 // CHECK: Namespace=inner:8:11 (Definition) [type=] [typekind=Invalid] [isPOD=0]
-// CHECK: StructDecl=Bar:10:8 (Definition) [type=outer::inner::Bar] [typekind=Record] [isPOD=0]
+// CHECK: StructDecl=Bar:10:8 (Definition) [type=outer::inner::Bar] [typekind=Record] [isPOD=0] [nbFields=1]
 // CHECK: CXXConstructor=Bar:11:3 (Definition) [type=void (outer::Foo<bool> *)] [typekind=FunctionProto] [canonicaltype=void (outer::Foo<bool> *)] [canonicaltypekind=FunctionProto] [resulttype=void] [resulttypekind=Void] [args= [outer::Foo<bool> *] [Pointer]] [isPOD=0]
 // CHECK: ParmDecl=foo:11:25 (Definition) [type=outer::Foo<bool> *] [typekind=Pointer] [canonicaltype=outer::Foo<bool> *] [canonicaltypekind=Pointer] [isPOD=1]
 // CHECK: NamespaceRef=outer:1:11 [type=] [typekind=Invalid] [isPOD=0]
@@ -78,4 +79,5 @@ int Blob::*member_pointer;
 // CHECK: ParmDecl=:33:11 (Definition) [type=int [size]] [typekind=DependentSizedArray] [isPOD=0]
 // CHECK: ParmDecl=incomplete_array:35:21 (Definition) [type=int []] [typekind=IncompleteArray] [isPOD=1]
 // CHECK: VarDecl=variable_array:35:47 (Definition) [type=int [i]] [typekind=VariableArray] [isPOD=1]
+// CHECK: StructDecl=Blob:37:8 (Definition) [type=Blob] [typekind=Record] [isPOD=1] [nbFields=2]
 // CHECK: VarDecl=member_pointer:40:12 (Definition) [type=int Blob::*] [typekind=MemberPointer] [isPOD=1]
