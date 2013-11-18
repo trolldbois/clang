@@ -3062,6 +3062,14 @@ CINDEX_LINKAGE unsigned clang_Type_visitFields(CXType T,
  * \brief Return the offset of the field represented by the Cursor.
  *
  * If the cursor is not a field declaration, -1 is returned.
+ * If the cursor semantic parent is not a record field declaration,
+ *   CXTypeLayoutError_Invalid is returned.
+ * If the field's type declaration is an incomplete type,
+ *   CXTypeLayoutError_Incomplete is returned.
+ * If the field's type declaration is a dependent type,
+ *   CXTypeLayoutError_Dependent is returned.
+ * If the field's name S is not found,
+ *   CXTypeLayoutError_InvalidFieldName is returned.
  */
 CINDEX_LINKAGE long long clang_Cursor_getOffsetOfField(CXCursor C);
 
