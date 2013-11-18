@@ -1258,25 +1258,27 @@ static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
   /* Print the record field offset if applicable. */
   {
     const char *FieldName = clang_getCString(clang_getCursorSpelling(cursor));
-    /* recurse to get the root anonymous record parent */
-    CXCursor Parent, Root;
+    /* recurse to get the first parent record that is not anonymous. */
+    CXCursor Parent, Record;
+    unsigned RecordIsAnonymous = 0;
     if (clang_getCursorKind(cursor) == CXCursor_FieldDecl ) {
-      const char *RootParentName;
-      Root = Parent = p;
+      Record = Parent = p;
       do {
-        Root = Parent;
-        RootParentName = clang_getCString(clang_getCursorSpelling(Root));
-        Parent = clang_getCursorSemanticParent(Root);
-      } while ( clang_getCursorType(Parent).kind == CXType_Record &&
-                !strcmp(RootParentName, "") );
-      /* if RootParentName is "", record is anonymous. */
+        Record = Parent;
+        Parent = clang_getCursorSemanticParent(Record);
+        RecordIsAnonymous = clang_Cursor_isAnonymous(Record);
+        /* Recurse as long as the parent is a CXType_Record and the Record 
+           is anonymous */
+      } while ( clang_getCursorType(Parent).kind == CXType_Record && 
+                RecordIsAnonymous > 0);
       {
-        long long Offset = clang_Type_getOffsetOf(clang_getCursorType(Root),
+        long long Offset = clang_Type_getOffsetOf(clang_getCursorType(Record),
                                                   FieldName);
         long long Offset2 = clang_Cursor_getOffsetOfField(cursor);
         if (Offset == Offset2){
             printf(" [offsetof=%lld]", Offset);
         } else {
+            /* Offsets will be different in anonymous records. */
             printf(" [offsetof=%lld/%lld]", Offset, Offset2);
         }
       }
