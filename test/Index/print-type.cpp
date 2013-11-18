@@ -80,4 +80,4 @@ int Blob::*member_pointer;
 // CHECK: ParmDecl=incomplete_array:35:21 (Definition) [type=int []] [typekind=IncompleteArray] [isPOD=1]
 // CHECK: VarDecl=variable_array:35:47 (Definition) [type=int [i]] [typekind=VariableArray] [isPOD=1]
 // CHECK: StructDecl=Blob:37:8 (Definition) [type=Blob] [typekind=Record] [isPOD=1] [nbFields=2]
-// CHECK: VarDecl=member_pointer:40:12 (Definition) [type=int Blob::*] [typekind=MemberPointer] [isPOD=1]
+// CHECK: VarDecl=member_pointer:41:12 (Definition) [type=int Blob::*] [typekind=MemberPointer] [isPOD=1]
