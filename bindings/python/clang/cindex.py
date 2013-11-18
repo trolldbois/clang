@@ -1794,8 +1794,8 @@ class Type(Structure):
             fields.append(field)
             return 1 # continue
         fields = []
-        conf.lib.clang_Type_visitFields(self, callbacks['fields_visit'](visitor),
-            fields)
+        conf.lib.clang_Type_visitFields(self,
+                            callbacks['fields_visit'](visitor), fields)
         return iter(fields)
 
     @property

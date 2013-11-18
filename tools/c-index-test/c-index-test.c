@@ -1157,7 +1157,8 @@ static void PrintTypeAndTypeKind(CXType T, const char *Format) {
 }
 
 
-static enum CXFieldVisitResult FieldVisitor(CXCursor C, CXClientData client_data) {
+static enum CXFieldVisitResult FieldVisitor(CXCursor C, 
+                                            CXClientData client_data) {
     (*(int *) client_data)+=1;
     return CXFieldVisit_Continue;
 }
