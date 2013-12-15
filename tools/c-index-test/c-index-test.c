@@ -1203,6 +1203,13 @@ static void PrintTypeAndTypeKind(CXType T, const char *Format) {
   clang_disposeString(TypeKindSpelling);
 }
 
+
+static enum CXFieldVisitResult FieldVisitor(CXCursor C, 
+                                            CXClientData client_data) {
+    (*(int *) client_data)+=1;
+    return CXFieldVisit_Continue;
+}
+
 static enum CXChildVisitResult PrintType(CXCursor cursor, CXCursor p,
                                          CXClientData d) {
   if (!clang_isInvalid(clang_getCursorKind(cursor))) {
@@ -1251,6 +1258,22 @@ static enum CXChildVisitResult PrintType(CXCursor cursor, CXCursor p,
     }
     /* Print if this is a non-POD type. */
     printf(" [isPOD=%d]", clang_isPODType(T));
+    /* Print the number of fields if they exist. */
+    {
+      int numFields = 0;
+      if (clang_Type_visitFields(T, FieldVisitor, &numFields)){
+        if (numFields != 0) {
+          printf(" [nbFields=%d]", numFields);
+        }
+        /* Print if it is an anonymous record. */
+        {
+          unsigned isAnon = clang_Cursor_isAnonymous(cursor);
+          if (isAnon != 0) {
+            printf(" [isAnon=%d]", isAnon);
+          }
+        }
+      }
+    }
 
     printf("\n");
   }
@@ -1283,22 +1306,29 @@ static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
   /* Print the record field offset if applicable. */
   {
     const char *FieldName = clang_getCString(clang_getCursorSpelling(cursor));
-    /* recurse to get the root anonymous record parent */
-    CXCursor Parent, Root;
+    /* recurse to get the first parent record that is not anonymous. */
+    CXCursor Parent, Record;
+    unsigned RecordIsAnonymous = 0;
     if (clang_getCursorKind(cursor) == CXCursor_FieldDecl ) {
-      const char *RootParentName;
-      Root = Parent = p;
+      Record = Parent = p;
       do {
-        Root = Parent;
-        RootParentName = clang_getCString(clang_getCursorSpelling(Root));
-        Parent = clang_getCursorSemanticParent(Root);
-      } while ( clang_getCursorType(Parent).kind == CXType_Record &&
-                !strcmp(RootParentName, "") );
-      /* if RootParentName is "", record is anonymous. */
+        Record = Parent;
+        Parent = clang_getCursorSemanticParent(Record);
+        RecordIsAnonymous = clang_Cursor_isAnonymous(Record);
+        /* Recurse as long as the parent is a CXType_Record and the Record 
+           is anonymous */
+      } while ( clang_getCursorType(Parent).kind == CXType_Record && 
+                RecordIsAnonymous > 0);
       {
-        long long Offset = clang_Type_getOffsetOf(clang_getCursorType(Root),
+        long long Offset = clang_Type_getOffsetOf(clang_getCursorType(Record),
                                                   FieldName);
-        printf(" [offsetof=%lld]", Offset);
+        long long Offset2 = clang_Cursor_getOffsetOfField(cursor);
+        if (Offset == Offset2){
+            printf(" [offsetof=%lld]", Offset);
+        } else {
+            /* Offsets will be different in anonymous records. */
+            printf(" [offsetof=%lld/%lld]", Offset, Offset2);
+        }
       }
     }
   }

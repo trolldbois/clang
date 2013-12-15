@@ -1373,6 +1373,10 @@ class Cursor(Structure):
             children)
         return iter(children)
 
+    def get_field_offsetof(self):
+        """Returns the offsetof the FIELD_DECL pointed by this Cursor."""
+        return conf.lib.clang_Cursor_getOffsetOfField(self)
+
     def get_tokens(self):
         """Obtain Token instances formulating that compose this Cursor.
 
@@ -1380,6 +1384,14 @@ class Cursor(Structure):
         occupy the extent this cursor occupies.
         """
         return TokenGroup.get_tokens(self._tu, self.extent)
+
+    def is_anonymous(self):
+        """
+        Check if the record is anonymous.
+        """
+        if self.kind == CursorKind.FIELD_DECL:
+            return self.type.get_declaration().is_anonymous()
+        return conf.lib.clang_Cursor_isAnonymous(self)
 
     def is_bitfield(self):
         """
@@ -1770,6 +1782,21 @@ class Type(Structure):
         """
         return RefQualifierKind.from_id(
                 conf.lib.clang_Type_getCXXRefQualifier(self))
+
+    def get_fields(self):
+        """Return an iterator for accessing the fields of this type."""
+
+        def visitor(field, children):
+            assert field != conf.lib.clang_getNullCursor()
+
+            # Create reference to TU so it isn't GC'd before Cursor.
+            field._tu = self._tu
+            fields.append(field)
+            return 1 # continue
+        fields = []
+        conf.lib.clang_Type_visitFields(self,
+                            callbacks['fields_visit'](visitor), fields)
+        return iter(fields)
 
     @property
     def spelling(self):
@@ -2659,6 +2686,7 @@ class Token(Structure):
 callbacks['translation_unit_includes'] = CFUNCTYPE(None, c_object_p,
         POINTER(SourceLocation), c_uint, py_object)
 callbacks['cursor_visit'] = CFUNCTYPE(c_int, Cursor, Cursor, py_object)
+callbacks['fields_visit'] = CFUNCTYPE(c_int, Cursor, py_object)
 
 # Functions strictly alphabetical order.
 functionList = [
@@ -3215,6 +3243,10 @@ functionList = [
    Cursor,
    Cursor.from_result),
 
+  ("clang_Cursor_isAnonymous",
+   [Cursor],
+   bool),
+
   ("clang_Cursor_isBitField",
    [Cursor],
    bool),
@@ -3228,6 +3260,10 @@ functionList = [
    [Cursor],
    _CXString,
    _CXString.from_result),
+
+  ("clang_Cursor_getOffsetOfField",
+   [Cursor],
+   c_longlong),
 
   ("clang_Type_getAlignOf",
    [Type],
@@ -3248,6 +3284,10 @@ functionList = [
 
   ("clang_Type_getCXXRefQualifier",
    [Type],
+   c_uint),
+
+  ("clang_Type_visitFields",
+   [Type, callbacks['fields_visit'], py_object],
    c_uint),
 ]
 
