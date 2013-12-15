@@ -399,7 +399,7 @@ static void GenOpenCLArgMetadata(const FunctionDecl *FD, llvm::Function *Fn,
       if (ty.isVolatileQualified())
         typeQuals += typeQuals.empty() ? "volatile" : " volatile";
     }
-    
+
     argTypeQuals.push_back(llvm::MDString::get(Context, typeQuals));
 
     // Get image access qualifier:
@@ -1307,6 +1307,10 @@ void CodeGenFunction::EmitVariablyModifiedType(QualType type) {
     case Type::ObjCInterface:
     case Type::ObjCObjectPointer:
       llvm_unreachable("type class is never variably-modified!");
+
+    case Type::Adjusted:
+      type = cast<AdjustedType>(ty)->getAdjustedType();
+      break;
 
     case Type::Decayed:
       type = cast<DecayedType>(ty)->getPointeeType();

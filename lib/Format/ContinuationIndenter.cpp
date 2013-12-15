@@ -332,13 +332,16 @@ unsigned ContinuationIndenter::addTokenOnNewLine(LineState &State,
   Penalty += State.NextToken->SplitPenalty;
 
   // Breaking before the first "<<" is generally not desirable if the LHS is
-  // short.
+  // short. Also always add the penalty if the LHS is split over mutliple lines
+  // to avoid unncessary line breaks that just work around this penalty.
   if (Current.is(tok::lessless) && State.Stack.back().FirstLessLess == 0 &&
-      State.Column <= Style.ColumnLimit / 2)
+      (State.Column <= Style.ColumnLimit / 2 ||
+       State.Stack.back().BreakBeforeParameter))
     Penalty += Style.PenaltyBreakFirstLessLess;
 
   if (Current.is(tok::l_brace) && Current.BlockKind == BK_Block) {
-    State.Column = State.FirstIndent;
+    State.Column =
+        State.ParenLevel == 0 ? State.FirstIndent : State.Stack.back().Indent;
   } else if (Current.isOneOf(tok::r_brace, tok::r_square)) {
     if (Current.closesBlockTypeList(Style) ||
         (Current.MatchingParen &&
@@ -373,7 +376,8 @@ unsigned ContinuationIndenter::addTokenOnNewLine(LineState &State,
               State.ParenLevel == 0 &&
               (!Style.IndentFunctionDeclarationAfterType ||
                State.Line->StartsDefinition))) {
-    State.Column = State.Stack.back().Indent;
+    State.Column =
+        std::max(State.Stack.back().LastSpace, State.Stack.back().Indent);
   } else if (Current.Type == TT_ObjCSelectorName) {
     if (State.Stack.back().ColonPos == 0) {
       State.Stack.back().ColonPos =
@@ -577,8 +581,8 @@ unsigned ContinuationIndenter::moveStateToNextToken(LineState &State,
         //
         // instead of:
         //   SomeFunction(a, [] {
-        //                        f();  // break
-        //                      });
+        //                     f();  // break
+        //                   });
         for (unsigned i = 0; i != Current.MatchingParen->FakeRParens; ++i)
           State.Stack.pop_back();
         NewIndent = State.Stack.back().LastSpace + Style.IndentWidth;

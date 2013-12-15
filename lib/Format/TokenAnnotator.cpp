@@ -529,6 +529,7 @@ private:
     if (CurrentToken != NULL) {
       determineTokenType(*CurrentToken);
       CurrentToken->BindingStrength = Contexts.back().BindingStrength;
+      CurrentToken->NestingLevel = Contexts.size() - 1;
     }
 
     if (CurrentToken != NULL)
@@ -538,6 +539,7 @@ private:
       // Reset token type in case we have already looked at it and then
       // recovered from an error (e.g. failure to find the matching >).
       if (CurrentToken->Type != TT_LambdaLSquare &&
+          CurrentToken->Type != TT_FunctionLBrace &&
           CurrentToken->Type != TT_ImplicitStringLiteral)
         CurrentToken->Type = TT_Unknown;
       if (CurrentToken->Role)
@@ -1133,15 +1135,14 @@ unsigned TokenAnnotator::splitPenalty(const AnnotatedLine &Line,
   if (Left.is(tok::comma))
     return 1;
   if (Right.is(tok::l_square))
-    return 150;
+    return 250;
 
   if (Right.Type == TT_StartOfName || Right.is(tok::kw_operator)) {
     if (Line.First->is(tok::kw_for) && Right.PartOfMultiVariableDeclStmt)
       return 3;
     if (Left.Type == TT_StartOfName)
       return 20;
-    if (InFunctionDecl && Right.BindingStrength == 1)
-      // FIXME: Clean up hack of using BindingStrength to find top-level names.
+    if (InFunctionDecl && Right.NestingLevel == 0)
       return Style.PenaltyReturnTypeOnItsOwnLine;
     return 200;
   }
@@ -1180,7 +1181,7 @@ unsigned TokenAnnotator::splitPenalty(const AnnotatedLine &Line,
   if (Right.Type == TT_ObjCSelectorName)
     return 0;
   if (Left.is(tok::colon) && Left.Type == TT_ObjCMethodExpr)
-    return 50;
+    return Line.MightBeFunctionDecl ? 50 : 500;
 
   if (Left.is(tok::l_paren) && InFunctionDecl)
     return 100;
@@ -1292,9 +1293,12 @@ bool TokenAnnotator::spaceRequiredBetween(const AnnotatedLine &Line,
     return Line.Type == LT_ObjCDecl ||
            Left.isOneOf(tok::kw_return, tok::kw_new, tok::kw_delete,
                         tok::semi) ||
-           (Style.SpaceAfterControlStatementKeyword &&
+           (Style.SpaceBeforeParens != FormatStyle::SBPO_Never &&
             Left.isOneOf(tok::kw_if, tok::kw_for, tok::kw_while, tok::kw_switch,
-                         tok::kw_catch));
+                         tok::kw_catch)) ||
+           (Style.SpaceBeforeParens == FormatStyle::SBPO_Always &&
+            Left.isOneOf(tok::identifier, tok::kw___attribute) &&
+            Line.Type != LT_PreprocessorDirective);
   }
   if (Left.is(tok::at) && Right.Tok.getObjCKeywordID() != tok::objc_not_keyword)
     return false;
@@ -1302,6 +1306,8 @@ bool TokenAnnotator::spaceRequiredBetween(const AnnotatedLine &Line,
     return !Left.Children.empty(); // No spaces in "{}".
   if (Left.is(tok::l_brace) || Right.is(tok::r_brace))
     return !Style.Cpp11BracedListStyle;
+  if (Left.Type == TT_BlockComment && Left.TokenText.endswith("=*/"))
+    return false;
   if (Right.Type == TT_UnaryOperator)
     return !Left.isOneOf(tok::l_paren, tok::l_square, tok::at) &&
            (Left.isNot(tok::colon) || Left.Type != TT_ObjCMethodExpr);
@@ -1310,8 +1316,6 @@ bool TokenAnnotator::spaceRequiredBetween(const AnnotatedLine &Line,
       Right.BlockKind != BK_Block)
     return false;
   if (Left.is(tok::period) || Right.is(tok::period))
-    return false;
-  if (Left.Type == TT_BlockComment && Left.TokenText.endswith("=*/"))
     return false;
   if (Right.is(tok::hash) && Left.is(tok::identifier) && Left.TokenText == "L")
     return false;
@@ -1395,9 +1399,8 @@ bool TokenAnnotator::mustBreakBefore(const AnnotatedLine &Line,
     return true;
   } else if (Right.Previous->ClosesTemplateDeclaration &&
              Right.Previous->MatchingParen &&
-             Right.Previous->MatchingParen->BindingStrength == 1 &&
+             Right.Previous->MatchingParen->NestingLevel == 0 &&
              Style.AlwaysBreakTemplateDeclarations) {
-    // FIXME: Fix horrible hack of using BindingStrength to find top-level <>.
     return true;
   } else if (Right.Type == TT_CtorInitializerComma &&
              Style.BreakConstructorInitializersBeforeComma &&
@@ -1407,7 +1410,8 @@ bool TokenAnnotator::mustBreakBefore(const AnnotatedLine &Line,
              Right.Previous->isNot(tok::r_brace) && Right.isNot(tok::r_brace)) {
     return true;
   } else if (Right.is(tok::l_brace) && (Right.BlockKind == BK_Block)) {
-    return Style.BreakBeforeBraces == FormatStyle::BS_Allman;
+    return Style.BreakBeforeBraces == FormatStyle::BS_Allman ||
+           Style.BreakBeforeBraces == FormatStyle::BS_GNU;
   }
   return false;
 }
@@ -1415,6 +1419,8 @@ bool TokenAnnotator::mustBreakBefore(const AnnotatedLine &Line,
 bool TokenAnnotator::canBreakBefore(const AnnotatedLine &Line,
                                     const FormatToken &Right) {
   const FormatToken &Left = *Right.Previous;
+  if (Left.is(tok::at))
+    return false;
   if (Right.Type == TT_StartOfName || Right.is(tok::kw_operator))
     return true;
   if (Right.isTrailingComment())
@@ -1489,7 +1495,7 @@ bool TokenAnnotator::canBreakBefore(const AnnotatedLine &Line,
   if (Right.Type == TT_CtorInitializerComma &&
       Style.BreakConstructorInitializersBeforeComma)
     return true;
-  if (Right.isBinaryOperator() && Style.BreakBeforeBinaryOperators)
+  if (Right.Type == TT_BinaryOperator && Style.BreakBeforeBinaryOperators)
     return true;
   if (Left.is(tok::greater) && Right.is(tok::greater) &&
       Left.Type != TT_TemplateCloser)

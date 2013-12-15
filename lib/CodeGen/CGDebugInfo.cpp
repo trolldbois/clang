@@ -2123,10 +2123,11 @@ llvm::DIType CGDebugInfo::CreateTypeNode(QualType Ty, llvm::DIFile Unit) {
     return CreateType(cast<ComplexType>(Ty));
   case Type::Pointer:
     return CreateType(cast<PointerType>(Ty), Unit);
+  case Type::Adjusted:
   case Type::Decayed:
-    // Decayed types are just pointers in LLVM and DWARF.
+    // Decayed and adjusted types use the adjusted type in LLVM and DWARF.
     return CreateType(
-        cast<PointerType>(cast<DecayedType>(Ty)->getDecayedType()), Unit);
+        cast<PointerType>(cast<AdjustedType>(Ty)->getAdjustedType()), Unit);
   case Type::BlockPointer:
     return CreateType(cast<BlockPointerType>(Ty), Unit);
   case Type::Typedef:
@@ -2258,7 +2259,8 @@ llvm::DICompositeType CGDebugInfo::CreateLimitedType(const RecordType *Ty) {
   } else
     RealDecl = DBuilder.createStructType(RDContext, RDName, DefUnit, Line,
                                          Size, Align, 0, llvm::DIType(),
-                                         llvm::DIArray(), 0, 0, FullName);
+                                         llvm::DIArray(), 0, llvm::DIType(),
+                                         FullName);
 
   RegionMap[Ty->getDecl()] = llvm::WeakVH(RealDecl);
   TypeCache[QualType(Ty, 0).getAsOpaquePtr()] = RealDecl;
@@ -2276,7 +2278,7 @@ void CGDebugInfo::CollectContainingType(const CXXRecordDecl *RD,
   llvm::DICompositeType ContainingType;
   const ASTRecordLayout &RL = CGM.getContext().getASTRecordLayout(RD);
   if (const CXXRecordDecl *PBase = RL.getPrimaryBase()) {
-    // Seek non virtual primary base root.
+    // Seek non-virtual primary base root.
     while (1) {
       const ASTRecordLayout &BRL = CGM.getContext().getASTRecordLayout(PBase);
       const CXXRecordDecl *PBT = BRL.getPrimaryBase();

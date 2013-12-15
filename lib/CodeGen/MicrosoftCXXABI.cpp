@@ -50,6 +50,8 @@ public:
   // arbitrary.
   StringRef GetDeletedVirtualCallName() { return "_purecall"; }
 
+  bool isInlineInitializedStaticDataMemberLinkOnce() { return true; }
+
   llvm::Value *adjustToCompleteObject(CodeGenFunction &CGF,
                                       llvm::Value *ptr,
                                       QualType type);
@@ -153,6 +155,10 @@ public:
                            llvm::Value *This,
                            CallExpr::const_arg_iterator ArgBeg,
                            CallExpr::const_arg_iterator ArgEnd);
+
+  void EmitDestructorCall(CodeGenFunction &CGF, const CXXDestructorDecl *DD,
+                          CXXDtorType Type, bool ForVirtualBase,
+                          bool Delegating, llvm::Value *This);
 
   void emitVTableDefinitions(CodeGenVTables &CGVT, const CXXRecordDecl *RD);
 
@@ -721,7 +727,7 @@ llvm::Value *MicrosoftCXXABI::adjustThisParameterInVirtualFunctionPrologue(
 
   // In this ABI, every virtual function takes a pointer to one of the
   // subobjects that first defines it as the 'this' parameter, rather than a
-  // pointer to ther final overrider subobject. Thus, we need to adjust it back
+  // pointer to the final overrider subobject. Thus, we need to adjust it back
   // to the final overrider subobject before use.
   // See comments in the MicrosoftVFTableContext implementation for the details.
 
@@ -803,6 +809,20 @@ void MicrosoftCXXABI::EmitConstructorCall(CodeGenFunction &CGF,
   // FIXME: Provide a source location here.
   CGF.EmitCXXMemberCall(D, SourceLocation(), Callee, ReturnValueSlot(), This,
                         ImplicitParam, ImplicitParamTy, ArgBeg, ArgEnd);
+}
+
+void MicrosoftCXXABI::EmitDestructorCall(CodeGenFunction &CGF,
+                                         const CXXDestructorDecl *DD,
+                                         CXXDtorType Type, bool ForVirtualBase,
+                                         bool Delegating, llvm::Value *This) {
+  llvm::Value *Callee = CGM.GetAddrOfCXXDestructor(DD, Type);
+
+  if (DD->isVirtual())
+    This = adjustThisArgumentForVirtualCall(CGF, GlobalDecl(DD, Type), This);
+
+  // FIXME: Provide a source location here.
+  CGF.EmitCXXMemberCall(DD, SourceLocation(), Callee, ReturnValueSlot(), This,
+                        /*ImplicitParam=*/0, /*ImplicitParamTy=*/QualType(), 0, 0);
 }
 
 void MicrosoftCXXABI::emitVTableDefinitions(CodeGenVTables &CGVT,
@@ -1441,9 +1461,9 @@ MicrosoftCXXABI::BuildMemberPointer(const CXXRecordDecl *RD,
       FirstField = llvm::Constant::getNullValue(CGM.VoidPtrTy);
     } else {
       SmallString<256> ThunkName;
-      int OffsetInVFTable =
-          ML.Index *
-          getContext().getTypeSizeInChars(getContext().VoidPtrTy).getQuantity();
+      CharUnits PointerWidth = getContext().toCharUnitsFromBits(
+          getContext().getTargetInfo().getPointerWidth(0));
+      uint64_t OffsetInVFTable = ML.Index * PointerWidth.getQuantity();
       llvm::raw_svector_ostream Out(ThunkName);
       getMangleContext().mangleVirtualMemPtrThunk(MD, OffsetInVFTable, Out);
       Out.flush();
@@ -1689,6 +1709,11 @@ MicrosoftCXXABI::EmitMemberDataPointerAddress(CodeGenFunction &CGF,
     Base = AdjustVirtualBase(CGF, RD, Base, VirtualBaseAdjustmentOffset,
                              VBPtrOffset);
   }
+
+  // Cast to char*.
+  Base = Builder.CreateBitCast(Base, Builder.getInt8Ty()->getPointerTo(AS));
+
+  // Apply the offset, which we assume is non-null.
   llvm::Value *Addr =
     Builder.CreateInBoundsGEP(Base, FieldOffset, "memptr.offset");
 

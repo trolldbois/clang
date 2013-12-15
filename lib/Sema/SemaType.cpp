@@ -1812,7 +1812,10 @@ QualType Sema::BuildMemberPointerType(QualType T, QualType Class,
     }
   }
 
-  // FIXME: Adjust member function pointer calling conventions.
+  // Adjust the default free function calling convention to the default method
+  // calling convention.
+  if (T->isFunctionType())
+    adjustMemberFunctionCC(T, /*IsStatic=*/false);
 
   return Context.getMemberPointerType(T, Class.getTypePtr());
 }
@@ -2625,7 +2628,6 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
       }
       T = S.BuildReferenceType(T, DeclType.Ref.LValueRef, DeclType.Loc, Name);
 
-      Qualifiers Quals;
       if (DeclType.Ref.HasRestrict)
         T = S.BuildQualifiedType(T, DeclType.Loc, Qualifiers::Restrict);
       break;
@@ -2860,13 +2862,12 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
         }
       }
 
-      if (LangOpts.CPlusPlus && D.getDeclSpec().isTypeSpecOwned()) {
+      if (LangOpts.CPlusPlus && D.getDeclSpec().hasTagDefinition()) {
         // C++ [dcl.fct]p6:
         //   Types shall not be defined in return or parameter types.
         TagDecl *Tag = cast<TagDecl>(D.getDeclSpec().getRepAsDecl());
-        if (Tag->isCompleteDefinition())
-          S.Diag(Tag->getLocation(), diag::err_type_defined_in_result_type)
-            << Context.getTypeDeclType(Tag);
+        S.Diag(Tag->getLocation(), diag::err_type_defined_in_result_type)
+          << Context.getTypeDeclType(Tag);
       }
 
       // Exception specs are not allowed in typedefs. Complain, but add it
@@ -3683,6 +3684,9 @@ namespace {
     void VisitAttributedTypeLoc(AttributedTypeLoc TL) {
       fillAttributedTypeLoc(TL, Chunk.getAttrs());
     }
+    void VisitAdjustedTypeLoc(AdjustedTypeLoc TL) {
+      // nothing
+    }
     void VisitBlockPointerTypeLoc(BlockPointerTypeLoc TL) {
       assert(Chunk.Kind == DeclaratorChunk::BlockPointer);
       TL.setCaretLoc(Chunk.Loc);
@@ -3837,6 +3841,10 @@ Sema::GetTypeSourceInfoForDeclarator(Declarator &D, QualType T,
       fillAttributedTypeLoc(TL, D.getTypeObject(i).getAttrs());
       CurrTL = TL.getNextTypeLoc().getUnqualifiedLoc();
     }
+
+    // FIXME: Ordering here?
+    while (AdjustedTypeLoc TL = CurrTL.getAs<AdjustedTypeLoc>())
+      CurrTL = TL.getNextTypeLoc().getUnqualifiedLoc();
 
     DeclaratorLocFiller(Context, D.getTypeObject(i)).Visit(CurrTL);
     CurrTL = CurrTL.getNextTypeLoc().getUnqualifiedLoc();
@@ -4587,36 +4595,38 @@ static bool handleFunctionTypeAttr(TypeProcessingState &state,
   return true;
 }
 
+bool Sema::hasExplicitCallingConv(QualType &T) {
+  QualType R = T.IgnoreParens();
+  while (const AttributedType *AT = dyn_cast<AttributedType>(R)) {
+    if (AT->isCallingConv())
+      return true;
+    R = AT->getModifiedType().IgnoreParens();
+  }
+  return false;
+}
+
 void Sema::adjustMemberFunctionCC(QualType &T, bool IsStatic) {
-  const FunctionType *FT = T->castAs<FunctionType>();
+  FunctionTypeUnwrapper Unwrapped(*this, T);
+  const FunctionType *FT = Unwrapped.get();
   bool IsVariadic = (isa<FunctionProtoType>(FT) &&
                      cast<FunctionProtoType>(FT)->isVariadic());
-  CallingConv CC = FT->getCallConv();
 
   // Only adjust types with the default convention.  For example, on Windows we
   // should adjust a __cdecl type to __thiscall for instance methods, and a
   // __thiscall type to __cdecl for static methods.
-  CallingConv DefaultCC =
+  CallingConv CurCC = FT->getCallConv();
+  CallingConv FromCC =
       Context.getDefaultCallingConvention(IsVariadic, IsStatic);
-  if (CC != DefaultCC)
+  CallingConv ToCC = Context.getDefaultCallingConvention(IsVariadic, !IsStatic);
+  if (CurCC != FromCC || FromCC == ToCC)
     return;
 
-  // Check if there was an explicit attribute, but only look through parens.
-  // The intent is to look for an attribute on the current declarator, but not
-  // one that came from a typedef.
-  QualType R = T.IgnoreParens();
-  while (const AttributedType *AT = dyn_cast<AttributedType>(R)) {
-    if (AT->isCallingConv())
-      return;
-    R = AT->getModifiedType().IgnoreParens();
-  }
+  if (hasExplicitCallingConv(T))
+    return;
 
-  // FIXME: This loses sugar.  This should probably be fixed with an implicit
-  // AttributedType node that adjusts the convention.
-  CC = Context.getDefaultCallingConvention(IsVariadic, !IsStatic);
-  FT = Context.adjustFunctionType(FT, FT->getExtInfo().withCallingConv(CC));
-  FunctionTypeUnwrapper Unwrapped(*this, T);
-  T = Unwrapped.wrap(*this, FT);
+  FT = Context.adjustFunctionType(FT, FT->getExtInfo().withCallingConv(ToCC));
+  QualType Wrapped = Unwrapped.wrap(*this, FT);
+  T = Context.getAdjustedType(T, Wrapped);
 }
 
 /// Handle OpenCL image access qualifiers: read_only, write_only, read_write
@@ -4944,9 +4954,6 @@ static void processTypeAttrs(TypeProcessingState &state, QualType &type,
       attr.setUsedAsTypeAttr();
       break;
 
-    case AttributeList::AT_Win64:
-      attr.setUsedAsTypeAttr();
-      break;
     MS_TYPE_ATTRS_CASELIST:
       if (!handleMSPointerTypeQualifierAttr(state, attr, type))
         attr.setUsedAsTypeAttr();

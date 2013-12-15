@@ -580,6 +580,9 @@ bool Parser::ConsumeAndStoreUntil(tok::TokenKind T1, tok::TokenKind T2,
 
     switch (Tok.getKind()) {
     case tok::eof:
+    case tok::annot_module_begin:
+    case tok::annot_module_end:
+    case tok::annot_module_include:
       // Ran out of tokens.
       return false;
 
@@ -868,7 +871,7 @@ public:
     Revert();
 
     // Put back the original tokens.
-    Self.SkipUntil(EndKind, true, /*DontConsume*/true);
+    Self.SkipUntil(EndKind, StopAtSemi | StopBeforeMatch);
     if (Toks.size()) {
       Token *Buffer = new Token[Toks.size()];
       std::copy(Toks.begin() + 1, Toks.end(), Buffer);
@@ -965,6 +968,9 @@ bool Parser::ConsumeAndStoreInitializer(CachedTokens &Toks,
       goto consume_token;
 
     case tok::eof:
+    case tok::annot_module_begin:
+    case tok::annot_module_end:
+    case tok::annot_module_include:
       // Ran out of tokens.
       return false;
 

@@ -321,21 +321,6 @@ static unsigned getOwnershipRule(unsigned attr) {
                  ObjCPropertyDecl::OBJC_PR_unsafe_unretained);
 }
 
-static const char *NameOfOwnershipAttribute(unsigned attr) {
-  if (attr & ObjCPropertyDecl::OBJC_PR_assign)
-    return "assign";
-  if (attr & ObjCPropertyDecl::OBJC_PR_retain )
-    return "retain";
-  if (attr & ObjCPropertyDecl::OBJC_PR_copy)
-    return "copy";
-  if (attr & ObjCPropertyDecl::OBJC_PR_weak)
-    return "weak";
-  if (attr & ObjCPropertyDecl::OBJC_PR_strong)
-    return "strong";
-  assert(attr & ObjCPropertyDecl::OBJC_PR_unsafe_unretained);
-  return "unsafe_unretained";
-}
-
 ObjCPropertyDecl *
 Sema::HandlePropertyInClassExtension(Scope *S,
                                      SourceLocation AtLoc,
@@ -463,10 +448,12 @@ Sema::HandlePropertyInClassExtension(Scope *S,
       QualType PrimaryPropertyQT =
         Context.getCanonicalType(PIDecl->getType()).getUnqualifiedType();
       if (isa<ObjCObjectPointerType>(PrimaryPropertyQT)) {
+        bool PropertyIsWeak = ((PIkind & ObjCPropertyDecl::OBJC_PR_weak) != 0);
         Qualifiers::ObjCLifetime PrimaryPropertyLifeTime =
           PrimaryPropertyQT.getObjCLifetime();
         if (PrimaryPropertyLifeTime == Qualifiers::OCL_None &&
-            (Attributes & ObjCDeclSpec::DQ_PR_weak)) {
+            (Attributes & ObjCDeclSpec::DQ_PR_weak) &&
+            !PropertyIsWeak) {
               Diag(AtLoc, diag::warn_property_implicitly_mismatched);
               Diag(PIDecl->getLocation(), diag::note_property_declare);
             }
@@ -1572,10 +1559,12 @@ void Sema::DefaultSynthesizeProperties(Scope *S, ObjCImplDecl* IMPDecl,
       }
       continue;
     }
-    if (isa<ObjCProtocolDecl>(Prop->getDeclContext())) {
+    if (ObjCProtocolDecl *Proto =
+          dyn_cast<ObjCProtocolDecl>(Prop->getDeclContext())) {
       // We won't auto-synthesize properties declared in protocols.
       Diag(IMPDecl->getLocation(), 
-           diag::warn_auto_synthesizing_protocol_property);
+           diag::warn_auto_synthesizing_protocol_property)
+        << Prop << Proto;
       Diag(Prop->getLocation(), diag::note_property_declare);
       continue;
     }
@@ -1828,6 +1817,34 @@ void Sema::DiagnoseOwningPropertyGetterSynthesis(const ObjCImplementationDecl *D
   }
 }
 
+void Sema::DiagnoseMissingDesignatedInitOverrides(
+                                            const ObjCImplementationDecl *ImplD,
+                                            const ObjCInterfaceDecl *IFD) {
+  assert(IFD->hasDesignatedInitializers());
+  const ObjCInterfaceDecl *SuperD = IFD->getSuperClass();
+  if (!SuperD)
+    return;
+
+  SelectorSet InitSelSet;
+  for (ObjCImplementationDecl::instmeth_iterator
+         I = ImplD->instmeth_begin(), E = ImplD->instmeth_end(); I!=E; ++I)
+    if ((*I)->getMethodFamily() == OMF_init)
+      InitSelSet.insert((*I)->getSelector());
+
+  SmallVector<const ObjCMethodDecl *, 8> DesignatedInits;
+  SuperD->getDesignatedInitializers(DesignatedInits);
+  for (SmallVector<const ObjCMethodDecl *, 8>::iterator
+         I = DesignatedInits.begin(), E = DesignatedInits.end(); I != E; ++I) {
+    const ObjCMethodDecl *MD = *I;
+    if (!InitSelSet.count(MD->getSelector())) {
+      Diag(ImplD->getLocation(),
+           diag::warn_objc_implementation_missing_designated_init_override)
+        << MD->getSelector();
+      Diag(MD->getLocation(), diag::note_objc_designated_init_marked_here);
+    }
+  }
+}
+
 /// AddPropertyAttrs - Propagates attributes from a property to the
 /// implicitly-declared getter or setter for that property.
 static void AddPropertyAttrs(Sema &S, ObjCMethodDecl *PropertyMethod,
@@ -2025,21 +2042,13 @@ void Sema::CheckObjCPropertyAttributes(Decl *PDecl,
   QualType PropertyTy = PropertyDecl->getType();
   unsigned PropertyOwnership = getOwnershipRule(Attributes);
 
-  if (Attributes & ObjCDeclSpec::DQ_PR_readonly) {
-    if (getLangOpts().ObjCAutoRefCount &&
-        PropertyTy->isObjCRetainableType() &&
-        !PropertyOwnership) {
-      // 'readonly' property with no obvious lifetime.
-      // its life time will be determined by its backing ivar.
-      return;
-    }
-    else if (PropertyOwnership) {
-      if (!getSourceManager().isInSystemHeader(Loc))
-        Diag(Loc, diag::warn_objc_property_attr_mutually_exclusive)
-          << "readonly" << NameOfOwnershipAttribute(Attributes);
-      return;
-    }
-  }
+  // 'readonly' property with no obvious lifetime.
+  // its life time will be determined by its backing ivar.
+  if (getLangOpts().ObjCAutoRefCount &&
+      Attributes & ObjCDeclSpec::DQ_PR_readonly &&
+      PropertyTy->isObjCRetainableType() &&
+      !PropertyOwnership)
+    return;
 
   // Check for copy or retain on non-object types.
   if ((Attributes & (ObjCDeclSpec::DQ_PR_weak | ObjCDeclSpec::DQ_PR_copy |

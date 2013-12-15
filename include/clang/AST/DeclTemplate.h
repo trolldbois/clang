@@ -2172,7 +2172,7 @@ public:
 
 /// \brief Declaration of a function specialization at template class scope.
 ///
-/// This is a non standard extension needed to support MSVC.
+/// This is a non-standard extension needed to support MSVC.
 ///
 /// For example:
 /// \code
@@ -2214,9 +2214,8 @@ public:
                                                       CXXMethodDecl *FD,
                                                    bool HasExplicitTemplateArgs,
                                         TemplateArgumentListInfo TemplateArgs) {
-    return new (C) ClassScopeFunctionSpecializationDecl(DC , Loc, FD,
-                                                        HasExplicitTemplateArgs,
-                                                        TemplateArgs);
+    return new (C, DC) ClassScopeFunctionSpecializationDecl(
+        DC, Loc, FD, HasExplicitTemplateArgs, TemplateArgs);
   }
 
   static ClassScopeFunctionSpecializationDecl *

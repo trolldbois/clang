@@ -799,6 +799,10 @@ DEF_TRAVERSE_TYPE(DecayedType, {
     TRY_TO(TraverseType(T->getOriginalType()));
   })
 
+DEF_TRAVERSE_TYPE(AdjustedType, {
+    TRY_TO(TraverseType(T->getOriginalType()));
+  })
+
 DEF_TRAVERSE_TYPE(ConstantArrayType, {
     TRY_TO(TraverseType(T->getElementType()));
   })
@@ -1006,6 +1010,10 @@ DEF_TRAVERSE_TYPELOC(MemberPointerType, {
   })
 
 DEF_TRAVERSE_TYPELOC(DecayedType, {
+    TRY_TO(TraverseTypeLoc(TL.getOriginalLoc()));
+  })
+
+DEF_TRAVERSE_TYPELOC(AdjustedType, {
     TRY_TO(TraverseTypeLoc(TL.getOriginalLoc()));
   })
 
@@ -2113,11 +2121,6 @@ DEF_TRAVERSE_STMT(CXXUuidofExpr, {
 
 DEF_TRAVERSE_STMT(UnaryTypeTraitExpr, {
     TRY_TO(TraverseTypeLoc(S->getQueriedTypeSourceInfo()->getTypeLoc()));
-  })
-
-DEF_TRAVERSE_STMT(BinaryTypeTraitExpr, {
-    TRY_TO(TraverseTypeLoc(S->getLhsTypeSourceInfo()->getTypeLoc()));
-    TRY_TO(TraverseTypeLoc(S->getRhsTypeSourceInfo()->getTypeLoc()));
   })
 
 DEF_TRAVERSE_STMT(TypeTraitExpr, {

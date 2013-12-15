@@ -73,7 +73,7 @@ class Parser : public CodeCompletionHandler {
   SourceLocation PrevTokLocation;
 
   unsigned short ParenCount, BracketCount, BraceCount;
-  
+
   /// Actions - These are the callbacks we invoke as we parse various constructs
   /// in the file.
   Sema &Actions;
@@ -136,9 +136,9 @@ class Parser : public CodeCompletionHandler {
   mutable IdentifierInfo *Ident_final;
   mutable IdentifierInfo *Ident_override;
 
-  // C++ type trait keywords that have can be reverted to identifiers and
-  // still used as type traits.
-  llvm::SmallDenseMap<IdentifierInfo *, tok::TokenKind> RevertableTypeTraits;
+  // C++ type trait keywords that can be reverted to identifiers and still be
+  // used as type traits.
+  llvm::SmallDenseMap<IdentifierInfo *, tok::TokenKind> RevertibleTypeTraits;
 
   OwningPtr<PragmaHandler> AlignHandler;
   OwningPtr<PragmaHandler> GCCVisibilityHandler;
@@ -192,6 +192,10 @@ class Parser : public CodeCompletionHandler {
     void operator++() {
       ++Depth;
       ++AddedLevels;
+    }
+    void addDepth(unsigned D) {
+      Depth += D;
+      AddedLevels += D;
     }
     unsigned getDepth() const { return Depth; }
   };
@@ -408,6 +412,14 @@ private:
     Tok.setKind(tok::eof);
   }
 
+  /// \brief Determine if we're at the end of the file or at a transition
+  /// between modules.
+  bool isEofOrEom() {
+    tok::TokenKind Kind = Tok.getKind();
+    return Kind == tok::eof || Kind == tok::annot_module_begin ||
+           Kind == tok::annot_module_end || Kind == tok::annot_module_include;
+  }
+
   /// \brief Handle the annotation token produced for #pragma unused(...)
   void HandlePragmaUnused();
 
@@ -554,6 +566,13 @@ private:
   bool TryAltiVecTokenOutOfLine(DeclSpec &DS, SourceLocation Loc,
                                 const char *&PrevSpec, unsigned &DiagID,
                                 bool &isInvalid);
+
+  /// TryKeywordIdentFallback - For compatibility with system headers using
+  /// keywords as identifiers, attempt to convert the current token to an
+  /// identifier and optionally disable the keyword for the remainder of the
+  /// translation unit. This returns false if the token was not replaced,
+  /// otherwise emits a diagnostic and returns true.
+  bool TryKeywordIdentFallback(bool DisableKeyword);
 
   /// \brief Get the TemplateIdAnnotation from the token.
   TemplateIdAnnotation *takeTemplateIdAnnotation(const Token &tok);
@@ -736,32 +755,45 @@ private:
   void CheckNestedObjCContexts(SourceLocation AtLoc);
 
 public:
+
+  /// \brief Control flags for SkipUntil functions.
+  enum SkipUntilFlags {
+    StopAtSemi = 1 << 0,  ///< Stop skipping at semicolon
+    /// \brief Stop skipping at specified token, but don't skip the token itself
+    StopBeforeMatch = 1 << 1,
+    StopAtCodeCompletion = 1 << 2 ///< Stop at code completion
+  };
+
+  friend LLVM_CONSTEXPR SkipUntilFlags operator|(SkipUntilFlags L,
+                                                 SkipUntilFlags R) {
+    return static_cast<SkipUntilFlags>(static_cast<unsigned>(L) |
+                                       static_cast<unsigned>(R));
+  }
+
   /// SkipUntil - Read tokens until we get to the specified token, then consume
-  /// it (unless DontConsume is true).  Because we cannot guarantee that the
-  /// token will ever occur, this skips to the next token, or to some likely
-  /// good stopping point.  If StopAtSemi is true, skipping will stop at a ';'
-  /// character.
+  /// it (unless StopBeforeMatch is specified).  Because we cannot guarantee
+  /// that the token will ever occur, this skips to the next token, or to some
+  /// likely good stopping point.  If Flags has StopAtSemi flag, skipping will
+  /// stop at a ';' character.
   ///
   /// If SkipUntil finds the specified token, it returns true, otherwise it
   /// returns false.
-  bool SkipUntil(tok::TokenKind T, bool StopAtSemi = true,
-                 bool DontConsume = false, bool StopAtCodeCompletion = false) {
-    return SkipUntil(llvm::makeArrayRef(T), StopAtSemi, DontConsume,
-                     StopAtCodeCompletion);
+  bool SkipUntil(tok::TokenKind T,
+                 SkipUntilFlags Flags = static_cast<SkipUntilFlags>(0)) {
+    return SkipUntil(llvm::makeArrayRef(T), Flags);
   }
-  bool SkipUntil(tok::TokenKind T1, tok::TokenKind T2, bool StopAtSemi = true,
-                 bool DontConsume = false, bool StopAtCodeCompletion = false) {
+  bool SkipUntil(tok::TokenKind T1, tok::TokenKind T2,
+                 SkipUntilFlags Flags = static_cast<SkipUntilFlags>(0)) {
     tok::TokenKind TokArray[] = {T1, T2};
-    return SkipUntil(TokArray, StopAtSemi, DontConsume,StopAtCodeCompletion);
+    return SkipUntil(TokArray, Flags);
   }
   bool SkipUntil(tok::TokenKind T1, tok::TokenKind T2, tok::TokenKind T3,
-                 bool StopAtSemi = true, bool DontConsume = false,
-                 bool StopAtCodeCompletion = false) {
+                 SkipUntilFlags Flags = static_cast<SkipUntilFlags>(0)) {
     tok::TokenKind TokArray[] = {T1, T2, T3};
-    return SkipUntil(TokArray, StopAtSemi, DontConsume,StopAtCodeCompletion);
+    return SkipUntil(TokArray, Flags);
   }
-  bool SkipUntil(ArrayRef<tok::TokenKind> Toks, bool StopAtSemi = true,
-                 bool DontConsume = false, bool StopAtCodeCompletion = false);
+  bool SkipUntil(ArrayRef<tok::TokenKind> Toks,
+                 SkipUntilFlags Flags = static_cast<SkipUntilFlags>(0));
 
   /// SkipMalformedDecl - Read tokens until we get to some likely good stopping
   /// point for skipping past a simple-declaration.
@@ -1634,6 +1666,9 @@ private:
                                   AccessSpecifier AS = AS_none,
                                   DeclSpecContext DSC = DSC_normal,
                                   LateParsedAttrList *LateAttrs = 0);
+  bool DiagnoseMissingSemiAfterTagDefinition(DeclSpec &DS, AccessSpecifier AS,
+                                             DeclSpecContext DSContext,
+                                             LateParsedAttrList *LateAttrs = 0);
 
   void ParseSpecifierQualifierList(DeclSpec &DS, AccessSpecifier AS = AS_none,
                                    DeclSpecContext DSC = DSC_normal);
@@ -1968,6 +2003,11 @@ private:
                                   SourceLocation AvailabilityLoc,
                                   ParsedAttributes &attrs,
                                   SourceLocation *endLoc);
+  
+  void ParseObjCBridgeRelatedAttribute(IdentifierInfo &ObjCBridgeRelated,
+                                       SourceLocation ObjCBridgeRelatedLoc,
+                                       ParsedAttributes &attrs,
+                                       SourceLocation *endLoc);
 
   bool IsThreadSafetyAttribute(StringRef AttrName);
   void ParseThreadSafetyAttribute(IdentifierInfo &AttrName,
@@ -2048,7 +2088,8 @@ private:
 
   void ParseTypeQualifierListOpt(DeclSpec &DS, bool GNUAttributesAllowed = true,
                                  bool CXX11AttributesAllowed = true,
-                                 bool AtomicAllowed = true);
+                                 bool AtomicAllowed = true,
+                                 bool IdentifierRequired = false);
   void ParseDirectDeclarator(Declarator &D);
   void ParseParenDeclarator(Declarator &D);
   void ParseFunctionDeclarator(Declarator &D,
@@ -2271,9 +2312,7 @@ private:
   DeclGroupPtrTy ParseModuleImport(SourceLocation AtLoc);
 
   //===--------------------------------------------------------------------===//
-  // GNU G++: Type Traits [Type-Traits.html in the GCC manual]
-  ExprResult ParseUnaryTypeTrait();
-  ExprResult ParseBinaryTypeTrait();
+  // C++11/G++: Type Traits [Type-Traits.html in the GCC manual]
   ExprResult ParseTypeTrait();
   
   //===--------------------------------------------------------------------===//

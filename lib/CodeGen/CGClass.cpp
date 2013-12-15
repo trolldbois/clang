@@ -1504,7 +1504,6 @@ void CodeGenFunction::EnterDtorCleanups(const CXXDestructorDecl *DD,
   }
 
   // Destroy direct fields.
-  SmallVector<const FieldDecl *, 16> FieldDecls;
   for (CXXRecordDecl::field_iterator I = ClassDecl->field_begin(),
        E = ClassDecl->field_end(); I != E; ++I) {
     const FieldDecl *field = *I;
@@ -1704,38 +1703,23 @@ CodeGenFunction::EmitSynthesizedCXXCopyCtorCall(const CXXConstructorDecl *D,
   assert(D->isInstance() &&
          "Trying to emit a member call expr on a static method!");
   
-  const FunctionProtoType *FPT = D->getType()->getAs<FunctionProtoType>();
+  const FunctionProtoType *FPT = D->getType()->castAs<FunctionProtoType>();
   
   CallArgList Args;
   
   // Push the this ptr.
   Args.add(RValue::get(This), D->getThisType(getContext()));
   
-  
   // Push the src ptr.
   QualType QT = *(FPT->arg_type_begin());
   llvm::Type *t = CGM.getTypes().ConvertType(QT);
   Src = Builder.CreateBitCast(Src, t);
   Args.add(RValue::get(Src), QT);
-  
+
   // Skip over first argument (Src).
-  ++ArgBeg;
-  CallExpr::const_arg_iterator Arg = ArgBeg;
-  for (FunctionProtoType::arg_type_iterator I = FPT->arg_type_begin()+1,
-       E = FPT->arg_type_end(); I != E; ++I, ++Arg) {
-    assert(Arg != ArgEnd && "Running over edge of argument list!");
-    EmitCallArg(Args, *Arg, *I);
-  }
-  // Either we've emitted all the call args, or we have a call to a
-  // variadic function.
-  assert((Arg == ArgEnd || FPT->isVariadic()) &&
-         "Extra arguments in non-variadic function!");
-  // If we still have any arguments, emit them using the type of the argument.
-  for (; Arg != ArgEnd; ++Arg) {
-    QualType ArgType = Arg->getType();
-    EmitCallArg(Args, *Arg, ArgType);
-  }
-  
+  EmitCallArgs(Args, FPT->isVariadic(), FPT->arg_type_begin() + 1,
+               FPT->arg_type_end(), ArgBeg + 1, ArgEnd);
+
   EmitCall(CGM.getTypes().arrangeCXXMethodCall(Args, FPT, RequiredArgs::All),
            Callee, ReturnValueSlot(), Args, D);
 }
@@ -1830,23 +1814,8 @@ void CodeGenFunction::EmitCXXDestructorCall(const CXXDestructorDecl *DD,
                                             bool ForVirtualBase,
                                             bool Delegating,
                                             llvm::Value *This) {
-  GlobalDecl GD(DD, Type);
-  llvm::Value *VTT = GetVTTParameter(GD, ForVirtualBase, Delegating);
-  llvm::Value *Callee = 0;
-  if (getLangOpts().AppleKext)
-    Callee = BuildAppleKextVirtualDestructorCall(DD, Type, 
-                                                 DD->getParent());
-    
-  if (!Callee)
-    Callee = CGM.GetAddrOfCXXDestructor(DD, Type);
-
-  if (DD->isVirtual())
-    This = CGM.getCXXABI().adjustThisArgumentForVirtualCall(*this, GD, This);
-
-  // FIXME: Provide a source location here.
-  EmitCXXMemberCall(DD, SourceLocation(), Callee, ReturnValueSlot(), This,
-                    VTT, getContext().getPointerType(getContext().VoidPtrTy),
-                    0, 0);
+  CGM.getCXXABI().EmitDestructorCall(*this, DD, Type, ForVirtualBase,
+                                     Delegating, This);
 }
 
 namespace {
