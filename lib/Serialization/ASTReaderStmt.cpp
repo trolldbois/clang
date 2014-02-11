@@ -1484,22 +1484,15 @@ void ASTStmtReader::VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E) {
   E->NamingClass = ReadDeclAs<CXXRecordDecl>(Record, Idx);
 }
 
-void ASTStmtReader::VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E) {
-  VisitExpr(E);
-  E->UTT = (UnaryTypeTrait)Record[Idx++];
-  E->Value = (bool)Record[Idx++];
-  SourceRange Range = ReadSourceRange(Record, Idx);
-  E->Loc = Range.getBegin();
-  E->RParen = Range.getEnd();
-  E->QueriedType = GetTypeSourceInfo(Record, Idx);
-}
-
 void ASTStmtReader::VisitTypeTraitExpr(TypeTraitExpr *E) {
   VisitExpr(E);
   E->TypeTraitExprBits.NumArgs = Record[Idx++];
   E->TypeTraitExprBits.Kind = Record[Idx++];
   E->TypeTraitExprBits.Value = Record[Idx++];
-  
+  SourceRange Range = ReadSourceRange(Record, Idx);
+  E->Loc = Range.getBegin();
+  E->RParenLoc = Range.getEnd();
+
   TypeSourceInfo **Args = E->getTypeSourceInfos();
   for (unsigned I = 0, N = E->getNumArgs(); I != N; ++I)
     Args[I] = GetTypeSourceInfo(Record, Idx);
@@ -2381,10 +2374,6 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
                   /*NumTemplateArgs=*/Record[ASTStmtReader::NumExprFields]
                                    ? Record[ASTStmtReader::NumExprFields + 1] 
                                    : 0);
-      break;
-      
-    case EXPR_CXX_UNARY_TYPE_TRAIT:
-      S = new (Context) UnaryTypeTraitExpr(Empty);
       break;
 
     case EXPR_TYPE_TRAIT:

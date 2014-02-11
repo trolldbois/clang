@@ -1486,20 +1486,12 @@ void ASTStmtWriter::VisitUnresolvedLookupExpr(UnresolvedLookupExpr *E) {
   Code = serialization::EXPR_CXX_UNRESOLVED_LOOKUP;
 }
 
-void ASTStmtWriter::VisitUnaryTypeTraitExpr(UnaryTypeTraitExpr *E) {
-  VisitExpr(E);
-  Record.push_back(E->getTrait());
-  Record.push_back(E->getValue());
-  Writer.AddSourceRange(E->getSourceRange(), Record);
-  Writer.AddTypeSourceInfo(E->getQueriedTypeSourceInfo(), Record);
-  Code = serialization::EXPR_CXX_UNARY_TYPE_TRAIT;
-}
-
 void ASTStmtWriter::VisitTypeTraitExpr(TypeTraitExpr *E) {
   VisitExpr(E);
   Record.push_back(E->TypeTraitExprBits.NumArgs);
   Record.push_back(E->TypeTraitExprBits.Kind); // FIXME: Stable encoding
   Record.push_back(E->TypeTraitExprBits.Value);
+  Writer.AddSourceRange(E->getSourceRange(), Record);
   for (unsigned I = 0, N = E->getNumArgs(); I != N; ++I)
     Writer.AddTypeSourceInfo(E->getArg(I), Record);
   Code = serialization::EXPR_TYPE_TRAIT;

@@ -1540,7 +1540,7 @@ void InitListChecker::CheckStructUnionTypes(const InitializedEntity &Entity,
          it != end; ++it) {
       if (!it->isUnnamedBitfield() && !it->hasInClassInitializer()) {
         SemaRef.Diag(IList->getSourceRange().getEnd(),
-                     diag::warn_missing_field_initializers) << it->getName();
+                     diag::warn_missing_field_initializers) << *it;
         break;
       }
     }
@@ -3522,10 +3522,13 @@ static OverloadingResult TryRefInitWithConversionFunction(Sema &S,
         if (ConvTemplate)
           S.AddTemplateConversionCandidate(ConvTemplate, I.getPair(),
                                            ActingDC, Initializer,
-                                           DestType, CandidateSet);
+                                           DestType, CandidateSet,
+                                           /*AllowObjCConversionOnExplicit=*/
+                                             false);
         else
           S.AddConversionCandidate(Conv, I.getPair(), ActingDC,
-                                   Initializer, DestType, CandidateSet);
+                                   Initializer, DestType, CandidateSet,
+                                   /*AllowObjCConversionOnExplicit=*/false);
       }
     }
   }
@@ -3547,7 +3550,7 @@ static OverloadingResult TryRefInitWithConversionFunction(Sema &S,
 
   // Compute the returned type of the conversion.
   if (isa<CXXConversionDecl>(Function))
-    T2 = Function->getResultType();
+    T2 = Function->getReturnType();
   else
     T2 = cv1T1;
 
@@ -4145,10 +4148,11 @@ static void TryUserDefinedConversion(Sema &S,
           if (ConvTemplate)
             S.AddTemplateConversionCandidate(ConvTemplate, I.getPair(),
                                              ActingDC, Initializer, DestType,
-                                             CandidateSet);
+                                             CandidateSet, AllowExplicit);
           else
             S.AddConversionCandidate(Conv, I.getPair(), ActingDC,
-                                     Initializer, DestType, CandidateSet);
+                                     Initializer, DestType, CandidateSet,
+                                     AllowExplicit);
         }
       }
     }
@@ -4462,6 +4466,14 @@ void InitializationSequence::InitializeFrom(Sema &S,
   Expr *Initializer = 0;
   if (Args.size() == 1) {
     Initializer = Args[0];
+    if (S.getLangOpts().ObjC1) {
+      if (S.CheckObjCBridgeRelatedConversions(Initializer->getLocStart(),
+                                              DestType, Initializer->getType(),
+                                              Initializer) ||
+          S.ConversionToObjCStringLiteralCheck(DestType, Initializer))
+        Args[0] = Initializer;
+        
+    }
     if (!isa<InitListExpr>(Initializer))
       SourceType = Initializer->getType();
   }
@@ -5876,7 +5888,7 @@ InitializationSequence::Perform(Sema &S,
 
         CastKind = CK_UserDefinedConversion;
 
-        CreatedObject = Conversion->getResultType()->isRecordType();
+        CreatedObject = Conversion->getReturnType()->isRecordType();
       }
 
       bool RequiresCopy = !IsCopy && !isReferenceBinding(Steps.back());
@@ -6482,9 +6494,6 @@ bool InitializationSequence::Diagnose(Sema &S,
 
   case FK_ConversionFailed: {
     QualType FromType = Args[0]->getType();
-    if (S.getLangOpts().ObjC1)
-        S.CheckObjCBridgeRelatedConversions(Kind.getLocation(),
-                                            DestType, FromType, Args[0]);
     PartialDiagnostic PDiag = S.PDiag(diag::err_init_conversion_failed)
       << (int)Entity.getKind()
       << DestType

@@ -10,7 +10,6 @@
 #define DEBUG_TYPE "format-test"
 
 #include "FormatTestUtils.h"
-
 #include "clang/Format/Format.h"
 #include "llvm/Support/Debug.h"
 #include "gtest/gtest.h"
@@ -32,19 +31,19 @@ protected:
     return Result;
   }
 
-  static std::string format(llvm::StringRef Code,
-                            const FormatStyle &Style = getGoogleJSStyle()) {
+  static std::string format(llvm::StringRef Code, const FormatStyle &Style) {
     return format(Code, 0, Code.size(), Style);
   }
 
   static FormatStyle getGoogleJSStyleWithColumns(unsigned ColumnLimit) {
-    FormatStyle Style = getGoogleJSStyle();
+    FormatStyle Style = getGoogleStyle(FormatStyle::LK_JavaScript);
     Style.ColumnLimit = ColumnLimit;
     return Style;
   }
 
-  static void verifyFormat(llvm::StringRef Code,
-                           const FormatStyle &Style = getGoogleJSStyle()) {
+  static void verifyFormat(
+      llvm::StringRef Code,
+      const FormatStyle &Style = getGoogleStyle(FormatStyle::LK_JavaScript)) {
     EXPECT_EQ(Code.str(), format(test::messUp(Code), Style));
   }
 };
@@ -78,6 +77,18 @@ TEST_F(FormatTestJS, UnderstandsJavaScriptOperators) {
                "            bbbbbb :\n"
                "            ccc;",
                getGoogleJSStyleWithColumns(20));
+}
+
+TEST_F(FormatTestJS, SpacesInContainerLiterals) {
+  verifyFormat("var arr = [1, 2, 3];");
+  verifyFormat("var obj = {a: 1, b: 2, c: 3};");
+
+  verifyFormat("var obj = {a: 1, b: 2, c: 3};",
+               getChromiumStyle(FormatStyle::LK_JavaScript));
+}
+
+TEST_F(FormatTestJS, SingleQuoteStrings) {
+  verifyFormat("this.function('', true);");
 }
 
 } // end namespace tooling

@@ -1,10 +1,10 @@
-// RUN: %clang_cc1 -emit-llvm %s -o - -mconstructor-aliases -cxx-abi microsoft -triple=i386-pc-win32 -fno-rtti > %t
+// RUN: %clang_cc1 -emit-llvm %s -o - -mconstructor-aliases -triple=i386-pc-win32 -fno-rtti > %t
 // RUN: FileCheck %s < %t
 // vftables are emitted very late, so do another pass to try to keep the checks
 // in source order.
 // RUN: FileCheck --check-prefix DTORS %s < %t
 //
-// RUN: %clang_cc1 -emit-llvm %s -o - -mconstructor-aliases -cxx-abi microsoft -triple=x86_64-pc-win32 -fno-rtti | FileCheck --check-prefix DTORS-X64 %s
+// RUN: %clang_cc1 -emit-llvm %s -o - -mconstructor-aliases -triple=x86_64-pc-win32 -fno-rtti | FileCheck --check-prefix DTORS-X64 %s
 
 namespace basic {
 
@@ -298,6 +298,37 @@ void call_nv_deleting_dtor(D *d) {
 // CHECK: ret
 }
 
+}
+
+namespace test1 {
+struct A { };
+struct B : virtual A {
+  B(int *a);
+  B(const char *a, ...);
+  __cdecl B(short *a);
+};
+B::B(int *a) {}
+B::B(const char *a, ...) {}
+B::B(short *a) {}
+// CHECK: define x86_thiscallcc %"struct.test1::B"* @"\01??0B@test1@@QAE@PAH@Z"
+// CHECK:               (%"struct.test1::B"* returned %this, i32* %a, i32 %is_most_derived)
+// CHECK: define %"struct.test1::B"* @"\01??0B@test1@@QAA@PBDZZ"
+// CHECK:               (%"struct.test1::B"* returned %this, i32 %is_most_derived, i8* %a, ...)
+
+// FIXME: This should be x86_thiscallcc.  MSVC ignores explicit CCs on structors.
+// CHECK: define %"struct.test1::B"* @"\01??0B@test1@@QAA@PAF@Z"
+// CHECK:               (%"struct.test1::B"* returned %this, i16* %a, i32 %is_most_derived)
+
+void construct_b() {
+  int a;
+  B b1(&a);
+  B b2("%d %d", 1, 2);
+}
+// CHECK-LABEL: define void @"\01?construct_b@test1@@YAXXZ"()
+// CHECK: call x86_thiscallcc %"struct.test1::B"* @"\01??0B@test1@@QAE@PAH@Z"
+// CHECK:               (%"struct.test1::B"* {{.*}}, i32* {{.*}}, i32 1)
+// CHECK: call %"struct.test1::B"* (%"struct.test1::B"*, i32, i8*, ...)* @"\01??0B@test1@@QAA@PBDZZ"
+// CHECK:               (%"struct.test1::B"* {{.*}}, i32 1, i8* {{.*}}, i32 1, i32 2)
 }
 
 // Dtor thunks for classes in anonymous namespaces should be internal, not

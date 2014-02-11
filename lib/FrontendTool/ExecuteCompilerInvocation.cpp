@@ -21,6 +21,7 @@
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Frontend/FrontendPluginRegistry.h"
+#include "clang/Frontend/Utils.h"
 #include "clang/Rewrite/Frontend/FrontendActions.h"
 #include "clang/StaticAnalyzer/Frontend/FrontendActions.h"
 #include "llvm/Option/OptTable.h"
@@ -64,6 +65,7 @@ static FrontendAction *CreateFrontendBaseAction(CompilerInstance &CI) {
   case InitOnly:               return new InitOnlyAction();
   case ParseSyntaxOnly:        return new SyntaxOnlyAction();
   case ModuleFileInfo:         return new DumpModuleInfoAction();
+  case VerifyPCH:              return new VerifyPCHAction();
 
   case PluginAction: {
     for (FrontendPluginRegistry::iterator it =
@@ -236,6 +238,6 @@ bool clang::ExecuteCompilerInvocation(CompilerInstance *Clang) {
     return false;
   bool Success = Clang->ExecuteAction(*Act);
   if (Clang->getFrontendOpts().DisableFree)
-    Act.take();
+    BuryPointer(Act.take());
   return Success;
 }
