@@ -118,7 +118,7 @@ ProgramStateRef ExprEngine::getInitialState(const LocationContext *InitLoc) {
       SVal V = state->getSVal(loc::MemRegionVal(R));
       SVal Constraint_untested = evalBinOp(state, BO_GT, V,
                                            svalBuilder.makeZeroVal(T),
-                                           getContext().IntTy);
+                                           svalBuilder.getConditionType());
 
       Optional<DefinedOrUnknownSVal> Constraint =
           Constraint_untested.getAs<DefinedOrUnknownSVal>();
@@ -285,6 +285,10 @@ void ExprEngine::processCFGElement(const CFGElement E, ExplodedNode *Pred,
       return;
     case CFGElement::Initializer:
       ProcessInitializer(E.castAs<CFGInitializer>().getInitializer(), Pred);
+      return;
+    case CFGElement::NewAllocator:
+      ProcessNewAllocator(E.castAs<CFGNewAllocator>().getAllocatorExpr(),
+                          Pred);
       return;
     case CFGElement::AutomaticObjectDtor:
     case CFGElement::DeleteDtor:
@@ -547,6 +551,17 @@ void ExprEngine::ProcessImplicitDtor(const CFGImplicitDtor D,
   Engine.enqueue(Dst, currBldrCtx->getBlock(), currStmtIdx);
 }
 
+void ExprEngine::ProcessNewAllocator(const CXXNewExpr *NE,
+                                     ExplodedNode *Pred) {
+  //TODO: Implement VisitCXXNewAllocatorCall
+  ExplodedNodeSet Dst;
+  NodeBuilder Bldr(Pred, Dst, *currBldrCtx);
+  const LocationContext *LCtx = Pred->getLocationContext();
+  PostImplicitCall PP(NE->getOperatorNew(), NE->getLocStart(), LCtx);
+  Bldr.generateNode(PP, Pred->getState(), Pred);
+  Engine.enqueue(Dst, currBldrCtx->getBlock(), currStmtIdx);
+}
+
 void ExprEngine::ProcessAutomaticObjDtor(const CFGAutomaticObjDtor Dtor,
                                          ExplodedNode *Pred,
                                          ExplodedNodeSet &Dst) {
@@ -663,7 +678,6 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::MSPropertyRefExprClass:
     case Stmt::CXXUnresolvedConstructExprClass:
     case Stmt::DependentScopeDeclRefExprClass:
-    case Stmt::UnaryTypeTraitExprClass:
     case Stmt::TypeTraitExprClass:
     case Stmt::ArrayTypeTraitExprClass:
     case Stmt::ExpressionTraitExprClass:

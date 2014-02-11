@@ -82,8 +82,10 @@ TargetInfo::TargetInfo(const llvm::Triple &T) : TargetOpts(), Triple(T) {
   // Default to not using fp2ret for __Complex long double
   ComplexLongDoubleUsesFP2Ret = false;
 
-  // Default to using the Itanium ABI.
-  TheCXXABI.set(TargetCXXABI::GenericItanium);
+  // Set the C++ ABI based on the triple.
+  TheCXXABI.set(Triple.getOS() == llvm::Triple::Win32
+                    ? TargetCXXABI::Microsoft
+                    : TargetCXXABI::GenericItanium);
 
   // Default to an empty address space map.
   AddrSpaceMap = &DefaultAddrSpaceMap;
@@ -244,7 +246,14 @@ void TargetInfo::setForcedLangOptions(LangOptions &Opts) {
     LongLongWidth = LongLongAlign = 128;
     HalfWidth = HalfAlign = 16;
     FloatWidth = FloatAlign = 32;
-    DoubleWidth = DoubleAlign = 64;
+    
+    // Embedded 32-bit targets (OpenCL EP) might have double C type 
+    // defined as float. Let's not override this as it might lead 
+    // to generating illegal code that uses 64bit doubles.
+    if (DoubleWidth != FloatWidth) {
+      DoubleWidth = DoubleAlign = 64;
+      DoubleFormat = &llvm::APFloat::IEEEdouble;
+    }
     LongDoubleWidth = LongDoubleAlign = 128;
 
     assert(PointerWidth == 32 || PointerWidth == 64);
@@ -259,7 +268,6 @@ void TargetInfo::setForcedLangOptions(LangOptions &Opts) {
 
     HalfFormat = &llvm::APFloat::IEEEhalf;
     FloatFormat = &llvm::APFloat::IEEEsingle;
-    DoubleFormat = &llvm::APFloat::IEEEdouble;
     LongDoubleFormat = &llvm::APFloat::IEEEquad;
   }
 }
@@ -481,6 +489,9 @@ bool TargetInfo::validateInputConstraint(ConstraintInfo *OutputConstraints,
                                          unsigned NumOutputs,
                                          ConstraintInfo &Info) const {
   const char *Name = Info.ConstraintStr.c_str();
+
+  if (!*Name)
+    return false;
 
   while (*Name) {
     switch (*Name) {

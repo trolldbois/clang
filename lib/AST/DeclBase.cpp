@@ -85,6 +85,7 @@ const char *Decl::getDeclKindName() const {
 
 void Decl::setInvalidDecl(bool Invalid) {
   InvalidDecl = Invalid;
+  assert(!isa<TagDecl>(this) || !cast<TagDecl>(this)->isCompleteDefinition());
   if (Invalid && !isa<ParmVarDecl>(this)) {
     // Defensive maneuver for ill-formed code: we're likely not to make it to
     // a point where we set the access specifier, so default it to "public"
@@ -158,11 +159,12 @@ bool Decl::isParameterPack() const {
   return isTemplateParameterPack();
 }
 
-bool Decl::isFunctionOrFunctionTemplate() const {
-  if (const UsingShadowDecl *UD = dyn_cast<UsingShadowDecl>(this))
-    return UD->getTargetDecl()->isFunctionOrFunctionTemplate();
-
-  return isa<FunctionDecl>(this) || isa<FunctionTemplateDecl>(this);
+FunctionDecl *Decl::getAsFunction() {
+  if (FunctionDecl *FD = dyn_cast<FunctionDecl>(this))
+    return FD;
+  if (const FunctionTemplateDecl *FTD = dyn_cast<FunctionTemplateDecl>(this))
+    return FTD->getTemplatedDecl();
+  return 0;
 }
 
 bool Decl::isTemplateDecl() const {
@@ -699,6 +701,24 @@ bool Decl::AccessDeclContextSanity() const {
 
 static Decl::Kind getKind(const Decl *D) { return D->getKind(); }
 static Decl::Kind getKind(const DeclContext *DC) { return DC->getDeclKind(); }
+
+const FunctionType *Decl::getFunctionType(bool BlocksToo) const {
+  QualType Ty;
+  if (const ValueDecl *D = dyn_cast<ValueDecl>(this))
+    Ty = D->getType();
+  else if (const TypedefNameDecl *D = dyn_cast<TypedefNameDecl>(this))
+    Ty = D->getUnderlyingType();
+  else
+    return 0;
+
+  if (Ty->isFunctionPointerType())
+    Ty = Ty->getAs<PointerType>()->getPointeeType();
+  else if (BlocksToo && Ty->isBlockPointerType())
+    Ty = Ty->getAs<BlockPointerType>()->getPointeeType();
+
+  return Ty->getAs<FunctionType>();
+}
+
 
 /// Starting at a given context (a Decl or DeclContext), look for a
 /// code context that is not a closure (a lambda, block, etc.).
