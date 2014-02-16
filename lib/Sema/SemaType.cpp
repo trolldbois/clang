@@ -2678,11 +2678,13 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
       if (!D.isInvalidType()) {
         // trailing-return-type is only required if we're declaring a function,
         // and not, for instance, a pointer to a function.
-        if (D.getDeclSpec().getTypeSpecType() == DeclSpec::TST_auto &&
+        if (D.getDeclSpec().containsPlaceholderType() &&
             !FTI.hasTrailingReturnType() && chunkIndex == 0 &&
             !S.getLangOpts().CPlusPlus1y) {
           S.Diag(D.getDeclSpec().getTypeSpecTypeLoc(),
-               diag::err_auto_missing_trailing_return);
+                 D.getDeclSpec().getTypeSpecType() == DeclSpec::TST_auto
+                     ? diag::err_auto_missing_trailing_return
+                     : diag::err_deduced_return_type);
           T = Context.IntTy;
           D.setInvalidType(true);
         } else if (FTI.hasTrailingReturnType()) {
@@ -5087,17 +5089,17 @@ bool Sema::RequireCompleteTypeImpl(SourceLocation Loc, QualType T,
             MSInheritanceAttr::Spelling InheritanceModel;
 
             switch (MSPointerToMemberRepresentationMethod) {
-            case PPTMK_BestCase:
+            case LangOptions::PPTMK_BestCase:
               InheritanceModel = RD->calculateInheritanceModel();
               break;
-            case PPTMK_FullGeneralitySingleInheritance:
+            case LangOptions::PPTMK_FullGeneralitySingleInheritance:
               InheritanceModel = MSInheritanceAttr::Keyword_single_inheritance;
               break;
-            case PPTMK_FullGeneralityMultipleInheritance:
+            case LangOptions::PPTMK_FullGeneralityMultipleInheritance:
               InheritanceModel =
                   MSInheritanceAttr::Keyword_multiple_inheritance;
               break;
-            case PPTMK_FullGeneralityVirtualInheritance:
+            case LangOptions::PPTMK_FullGeneralityVirtualInheritance:
               InheritanceModel =
                   MSInheritanceAttr::Keyword_unspecified_inheritance;
               break;
@@ -5106,7 +5108,7 @@ bool Sema::RequireCompleteTypeImpl(SourceLocation Loc, QualType T,
             RD->addAttr(MSInheritanceAttr::CreateImplicit(
                 getASTContext(), InheritanceModel,
                 /*BestCase=*/MSPointerToMemberRepresentationMethod ==
-                    PPTMK_BestCase,
+                    LangOptions::PPTMK_BestCase,
                 ImplicitMSInheritanceAttrLoc.isValid()
                     ? ImplicitMSInheritanceAttrLoc
                     : RD->getSourceRange()));
