@@ -3029,36 +3029,17 @@ CINDEX_LINKAGE long long clang_Type_getSizeOf(CXType T);
 CINDEX_LINKAGE long long clang_Type_getOffsetOf(CXType T, const char *S);
 
 /**
- * \brief Describes how the traversal of the fields of a particular
- * cursor representing a record_decl should proceed.
- *
- * A value of this enumeration type should be returned by each
- * \c CXFieldVisitor to indicate how clang_visitFields() proceed.
- */
-enum CXFieldVisitResult {
-  /**
-   * \brief Terminates the record traversal.
-   */
-  CXFieldVisit_Break,
-  /**
-   * \brief Continues the record traversal with the next field of
-   * the record just visited.
-   */
-  CXFieldVisit_Continue
-};
-
-/**
  * \brief Visitor invoked for each field found by a traversal.
  *
  * This visitor function will be invoked for each field found by
- * clang_visitCursorFields(). Its first argument is the cursor being
+ * clang_Type_visitFields(). Its first argument is the cursor being
  * visited, its second argument is the client data provided to
- * clang_visitCursorFields().
+ * clang_Type_visitFields().
  *
- * The visitor should return one of the \c CXFieldVisitResult values
- * to direct clang_visitCursorFields().
+ * The visitor should return one of the \c CXVisitorResult values
+ * to direct clang_Type_visitFields().
  */
-typedef enum CXFieldVisitResult (*CXFieldVisitor)(CXCursor C,                                                  
+typedef enum CXVisitorResult (*CXFieldVisitor)(CXCursor C,
                                                   CXClientData client_data);
 
 /**
