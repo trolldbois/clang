@@ -798,6 +798,37 @@ static long long validateFieldParentType(CXCursor PC, CXType PT){
   return 0;
 }
 
+long long clang_Type_getOffsetOf(CXType PT, const char *S) {
+  // check that PT is not incomplete/dependent
+  CXCursor PC = clang_getTypeDeclaration(PT);
+  long long Error = validateFieldParentType(PC,PT);
+  if (Error < 0)
+    return Error;
+  if (!S)
+    return CXTypeLayoutError_InvalidFieldName;
+  // lookup field
+  ASTContext &Ctx = cxtu::getASTUnit(GetTU(PT))->getASTContext();
+  IdentifierInfo *II = &Ctx.Idents.get(S);
+  DeclarationName FieldName(II);
+  const RecordDecl *RD =
+        dyn_cast_or_null<RecordDecl>(cxcursor::getCursorDecl(PC));
+  // verified in validateFieldParentType
+  RD = RD->getDefinition();
+  RecordDecl::lookup_const_result Res = RD->lookup(FieldName);
+  // If a field of the parent record is incomplete, lookup will fail.
+  // and we would return InvalidFieldName instead of Incomplete.
+  // But this erroneous results does protects again a hidden assertion failure
+  // in the RecordLayoutBuilder
+  if (Res.size() != 1)
+    return CXTypeLayoutError_InvalidFieldName;
+  if (const FieldDecl *FD = dyn_cast<FieldDecl>(Res.front()))
+    return Ctx.getFieldOffset(FD);
+  if (const IndirectFieldDecl *IFD = dyn_cast<IndirectFieldDecl>(Res.front()))
+    return Ctx.getFieldOffset(IFD);
+  // we don't want any other Decl Type.
+  return CXTypeLayoutError_InvalidFieldName;
+}
+
 enum CXRefQualifierKind clang_Type_getCXXRefQualifier(CXType T) {
   QualType QT = GetQualType(T);
   if (QT.isNull())
@@ -905,37 +936,6 @@ unsigned clang_Type_visitFields(CXType PT,
     }
   }
   return true;
-}
-
-long long clang_Type_getOffsetOf(CXType PT, const char *S) {
-  // check that PT is not incomplete/dependent
-  CXCursor PC = clang_getTypeDeclaration(PT);
-  long long Error = validateFieldParentType(PC,PT);
-  if (Error < 0)
-    return Error;
-  if (!S)
-    return CXTypeLayoutError_InvalidFieldName;
-  // lookup field
-  ASTContext &Ctx = cxtu::getASTUnit(GetTU(PT))->getASTContext();
-  IdentifierInfo *II = &Ctx.Idents.get(S);
-  DeclarationName FieldName(II);
-  const RecordDecl *RD =
-        dyn_cast_or_null<RecordDecl>(cxcursor::getCursorDecl(PC));
-  // verified in validateFieldParentType
-  RD = RD->getDefinition();
-  RecordDecl::lookup_const_result Res = RD->lookup(FieldName);
-  // If a field of the parent record is incomplete, lookup will fail.
-  // and we would return InvalidFieldName instead of Incomplete.
-  // But this erroneous results does protects again a hidden assertion failure
-  // in the RecordLayoutBuilder
-  if (Res.size() != 1)
-    return CXTypeLayoutError_InvalidFieldName;
-  if (const FieldDecl *FD = dyn_cast<FieldDecl>(Res.front()))
-    return Ctx.getFieldOffset(FD);
-  if (const IndirectFieldDecl *IFD = dyn_cast<IndirectFieldDecl>(Res.front()))
-    return Ctx.getFieldOffset(IFD);
-  // we don't want any other Decl Type.
-  return CXTypeLayoutError_InvalidFieldName;
 }
 
 } // end: extern "C"
