@@ -751,53 +751,6 @@ long long clang_Type_getSizeOf(CXType T) {
   return Ctx.getTypeSizeInChars(QT).getQuantity();
 }
 
-static long long visitRecordForValidation(const RecordDecl *RD) {
-  for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
-       I != E; ++I){
-    QualType FQT = (*I)->getType();
-    if (FQT->isIncompleteType())
-      return CXTypeLayoutError_Incomplete;
-    if (FQT->isDependentType())
-      return CXTypeLayoutError_Dependent;
-    // recurse
-    if (const RecordType *ChildType = (*I)->getType()->getAs<RecordType>()) {
-      if (const RecordDecl *Child = ChildType->getDecl()) {
-        long long ret = visitRecordForValidation(Child);
-        if (ret < 0)
-          return ret;
-      }
-    }
-    // else try next field
-  }
-  return 0;
-}
-
-static long long validateFieldParentType(CXCursor PC, CXType PT){
-  if (clang_isInvalid(PC.kind))
-    return CXTypeLayoutError_Invalid;
-  const RecordDecl *RD =
-        dyn_cast_or_null<RecordDecl>(cxcursor::getCursorDecl(PC));
-  // validate parent declaration
-  if (!RD || RD->isInvalidDecl())
-    return CXTypeLayoutError_Invalid;
-  RD = RD->getDefinition();
-  if (!RD)
-    return CXTypeLayoutError_Incomplete;
-  if (RD->isInvalidDecl())
-    return CXTypeLayoutError_Invalid;
-  // validate parent type
-  QualType RT = GetQualType(PT);
-  if (RT->isIncompleteType())
-    return CXTypeLayoutError_Incomplete;
-  if (RT->isDependentType())
-    return CXTypeLayoutError_Dependent;
-  // We recurse into all record fields to detect incomplete and dependent types.
-  long long Error = visitRecordForValidation(RD);
-  if (Error < 0)
-    return Error;
-  return 0;
-}
-
 long long clang_Type_getOffsetOf(CXType PT, const char *S) {
   // check that PT is not incomplete/dependent
   CXCursor PC = clang_getTypeDeclaration(PT);

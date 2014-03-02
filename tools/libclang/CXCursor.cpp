@@ -1247,7 +1247,7 @@ long long clang_Cursor_getOffsetOfField(CXCursor C) {
     // we need to validate the parent type
     CXCursor PC = clang_getCursorSemanticParent(C);
     CXType PT = clang_getCursorType(PC);
-    long long Error = validateFieldParentType(PC,PT);
+    long long Error = cxtype::validateFieldParentType(PC,PT);
     if (Error < 0)
       return Error;
     // proceed with the offset calculation
