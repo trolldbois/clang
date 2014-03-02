@@ -32,7 +32,7 @@
  * compatible, thus CINDEX_VERSION_MAJOR is expected to remain stable.
  */
 #define CINDEX_VERSION_MAJOR 0
-#define CINDEX_VERSION_MINOR 24
+#define CINDEX_VERSION_MINOR 25
 
 #define CINDEX_VERSION_ENCODE(major, minor) ( \
       ((major) * 10000)                       \
@@ -3097,7 +3097,7 @@ typedef enum CXVisitorResult (*CXFieldVisitor)(CXCursor C,
  * This function visits all the direct fields of the given cursor,
  * invoking the given \p visitor function with the cursors of each
  * visited field. The traversal may be ended prematurely, if
- * the visitor returns \c CXFieldVisit_Break.
+ * the visitor returns \c CXVisit_Break.
  *
  * \param T the record type whose field may be visited. 
  *
@@ -3108,7 +3108,7 @@ typedef enum CXVisitorResult (*CXFieldVisitor)(CXCursor C,
  * be passed to the visitor each time it is invoked.
  *
  * \returns a non-zero value if the traversal was terminated
- * prematurely by the visitor returning \c CXFieldVisit_Break.
+ * prematurely by the visitor returning \c CXVisit_Break.
  */
 CINDEX_LINKAGE unsigned clang_Type_visitFields(CXType T,
                                                CXFieldVisitor visitor,
