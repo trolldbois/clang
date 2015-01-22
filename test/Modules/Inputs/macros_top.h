@@ -20,3 +20,6 @@
 #define TOP_OTHER_REDEF2 2
 
 #define TOP_OTHER_DEF_RIGHT_UNDEF void
+
+#define TOP_REDEF_IN_SUBMODULES 0
+#define TOP_DEF_RIGHT_UNDEF void

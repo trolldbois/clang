@@ -62,3 +62,25 @@ const int test8 = __alignof__(S5::x);
 long long int test14[2];
 
 static_assert(alignof(test14) == 8, "foo"); // expected-warning {{'alignof' applied to an expression is a GNU extension}}
+
+// PR19992
+static_assert(alignof(int[]) == alignof(int), ""); // ok
+
+namespace alignof_array_expr {
+  alignas(32) extern int n[];
+  static_assert(alignof(n) == 32, ""); // expected-warning {{GNU extension}}
+
+  template<int> struct S {
+    static int a[];
+  };
+  template<int N> int S<N>::a[N];
+  // ok, does not complete type of S<-1>::a
+  static_assert(alignof(S<-1>::a) == alignof(int), ""); // expected-warning {{GNU extension}}
+}
+
+template <typename T> void n(T) {
+  alignas(T) int T1;
+  char k[__alignof__(T1)];
+  static_assert(sizeof(k) == alignof(long long), "");
+}
+template void n(long long);

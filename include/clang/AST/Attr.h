@@ -16,6 +16,7 @@
 
 #include "clang/AST/AttrIterator.h"
 #include "clang/AST/Decl.h"
+#include "clang/AST/Expr.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/AttrKinds.h"
 #include "clang/Basic/LLVM.h"
@@ -26,8 +27,8 @@
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <cassert>
-#include <cstring>
 
 namespace clang {
   class ASTContext;
@@ -131,7 +132,7 @@ public:
 };
 
 class InheritableParamAttr : public InheritableAttr {
-  virtual void anchor();
+  void anchor() override;
 protected:
   InheritableParamAttr(attr::Kind AK, SourceRange R,
                        unsigned SpellingListIndex = 0)

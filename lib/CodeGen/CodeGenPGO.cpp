@@ -13,380 +13,218 @@
 
 #include "CodeGenPGO.h"
 #include "CodeGenFunction.h"
+#include "CoverageMappingGen.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/StmtVisitor.h"
-#include "llvm/Config/config.h" // for strtoull()/strtoll() define
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/MDBuilder.h"
+#include "llvm/ProfileData/InstrProfReader.h"
+#include "llvm/Support/Endian.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MD5.h"
 
 using namespace clang;
 using namespace CodeGen;
 
-static void ReportBadPGOData(CodeGenModule &CGM, const char *Message) {
-  DiagnosticsEngine &Diags = CGM.getDiags();
-  unsigned diagID = Diags.getCustomDiagID(DiagnosticsEngine::Error, "%0");
-  Diags.Report(diagID) << Message;
-}
+void CodeGenPGO::setFuncName(StringRef Name,
+                             llvm::GlobalValue::LinkageTypes Linkage) {
+  StringRef RawFuncName = Name;
 
-PGOProfileData::PGOProfileData(CodeGenModule &CGM, std::string Path)
-  : CGM(CGM) {
-  if (llvm::MemoryBuffer::getFile(Path, DataBuffer)) {
-    ReportBadPGOData(CGM, "failed to open pgo data file");
-    return;
+  // Function names may be prefixed with a binary '1' to indicate
+  // that the backend should not modify the symbols due to any platform
+  // naming convention. Do not include that '1' in the PGO profile name.
+  if (RawFuncName[0] == '\1')
+    RawFuncName = RawFuncName.substr(1);
+
+  FuncName = RawFuncName;
+  if (llvm::GlobalValue::isLocalLinkage(Linkage)) {
+    // For local symbols, prepend the main file name to distinguish them.
+    // Do not include the full path in the file name since there's no guarantee
+    // that it will stay the same, e.g., if the files are checked out from
+    // version control in different locations.
+    if (CGM.getCodeGenOpts().MainFileName.empty())
+      FuncName = FuncName.insert(0, "<unknown>:");
+    else
+      FuncName = FuncName.insert(0, CGM.getCodeGenOpts().MainFileName + ":");
   }
 
-  if (DataBuffer->getBufferSize() > std::numeric_limits<unsigned>::max()) {
-    ReportBadPGOData(CGM, "pgo data file too big");
-    return;
-  }
-
-  // Scan through the data file and map each function to the corresponding
-  // file offset where its counts are stored.
-  const char *BufferStart = DataBuffer->getBufferStart();
-  const char *BufferEnd = DataBuffer->getBufferEnd();
-  const char *CurPtr = BufferStart;
-  uint64_t MaxCount = 0;
-  while (CurPtr < BufferEnd) {
-    // Read the mangled function name.
-    const char *FuncName = CurPtr;
-    // FIXME: Something will need to be added to distinguish static functions.
-    CurPtr = strchr(CurPtr, ' ');
-    if (!CurPtr) {
-      ReportBadPGOData(CGM, "pgo data file has malformed function entry");
-      return;
-    }
-    StringRef MangledName(FuncName, CurPtr - FuncName);
-
-    // Read the number of counters.
-    char *EndPtr;
-    unsigned NumCounters = strtol(++CurPtr, &EndPtr, 10);
-    if (EndPtr == CurPtr || *EndPtr != '\n' || NumCounters <= 0) {
-      ReportBadPGOData(CGM, "pgo data file has unexpected number of counters");
-      return;
-    }
-    CurPtr = EndPtr;
-
-    // Read function count.
-    uint64_t Count = strtoll(CurPtr, &EndPtr, 10);
-    if (EndPtr == CurPtr || *EndPtr != '\n') {
-      ReportBadPGOData(CGM, "pgo-data file has bad count value");
-      return;
-    }
-    CurPtr = EndPtr; // Point to '\n'.
-    FunctionCounts[MangledName] = Count;
-    MaxCount = Count > MaxCount ? Count : MaxCount;
-
-    // There is one line for each counter; skip over those lines.
-    // Since function count is already read, we start the loop from 1.
-    for (unsigned N = 1; N < NumCounters; ++N) {
-      CurPtr = strchr(++CurPtr, '\n');
-      if (!CurPtr) {
-        ReportBadPGOData(CGM, "pgo data file is missing some counter info");
-        return;
-      }
-    }
-
-    // Skip over the blank line separating functions.
-    CurPtr += 2;
-
-    DataOffsets[MangledName] = FuncName - BufferStart;
-  }
-  MaxFunctionCount = MaxCount;
+  // If we're generating a profile, create a variable for the name.
+  if (CGM.getCodeGenOpts().ProfileInstrGenerate)
+    createFuncNameVar(Linkage);
 }
 
-/// Return true if a function is hot. If we know nothing about the function,
-/// return false.
-bool PGOProfileData::isHotFunction(StringRef MangledName) {
-  llvm::StringMap<uint64_t>::const_iterator CountIter =
-    FunctionCounts.find(MangledName);
-  // If we know nothing about the function, return false.
-  if (CountIter == FunctionCounts.end())
-    return false;
-  // FIXME: functions with >= 30% of the maximal function count are
-  // treated as hot. This number is from preliminary tuning on SPEC.
-  return CountIter->getValue() >= (uint64_t)(0.3 * (double)MaxFunctionCount);
+void CodeGenPGO::setFuncName(llvm::Function *Fn) {
+  setFuncName(Fn->getName(), Fn->getLinkage());
 }
 
-/// Return true if a function is cold. If we know nothing about the function,
-/// return false.
-bool PGOProfileData::isColdFunction(StringRef MangledName) {
-  llvm::StringMap<uint64_t>::const_iterator CountIter =
-    FunctionCounts.find(MangledName);
-  // If we know nothing about the function, return false.
-  if (CountIter == FunctionCounts.end())
-    return false;
-  // FIXME: functions with <= 1% of the maximal function count are treated as
-  // cold. This number is from preliminary tuning on SPEC.
-  return CountIter->getValue() <= (uint64_t)(0.01 * (double)MaxFunctionCount);
-}
+void CodeGenPGO::createFuncNameVar(llvm::GlobalValue::LinkageTypes Linkage) {
+  // Usually, we want to match the function's linkage, but
+  // available_externally and extern_weak both have the wrong semantics.
+  if (Linkage == llvm::GlobalValue::ExternalWeakLinkage)
+    Linkage = llvm::GlobalValue::LinkOnceAnyLinkage;
+  else if (Linkage == llvm::GlobalValue::AvailableExternallyLinkage)
+    Linkage = llvm::GlobalValue::LinkOnceODRLinkage;
 
-bool PGOProfileData::getFunctionCounts(StringRef MangledName,
-                                       std::vector<uint64_t> &Counts) {
-  // Find the relevant section of the pgo-data file.
-  llvm::StringMap<unsigned>::const_iterator OffsetIter =
-    DataOffsets.find(MangledName);
-  if (OffsetIter == DataOffsets.end())
-    return true;
-  const char *CurPtr = DataBuffer->getBufferStart() + OffsetIter->getValue();
+  auto *Value =
+      llvm::ConstantDataArray::getString(CGM.getLLVMContext(), FuncName, false);
+  FuncNameVar =
+      new llvm::GlobalVariable(CGM.getModule(), Value->getType(), true, Linkage,
+                               Value, "__llvm_profile_name_" + FuncName);
 
-  // Skip over the function name.
-  CurPtr = strchr(CurPtr, ' ');
-  assert(CurPtr && "pgo-data has corrupted function entry");
-
-  // Read the number of counters.
-  char *EndPtr;
-  unsigned NumCounters = strtol(++CurPtr, &EndPtr, 10);
-  assert(EndPtr != CurPtr && *EndPtr == '\n' && NumCounters > 0 &&
-         "pgo-data file has corrupted number of counters");
-  CurPtr = EndPtr;
-
-  Counts.reserve(NumCounters);
-
-  for (unsigned N = 0; N < NumCounters; ++N) {
-    // Read the count value.
-    uint64_t Count = strtoll(CurPtr, &EndPtr, 10);
-    if (EndPtr == CurPtr || *EndPtr != '\n') {
-      ReportBadPGOData(CGM, "pgo-data file has bad count value");
-      return true;
-    }
-    Counts.push_back(Count);
-    CurPtr = EndPtr + 1;
-  }
-
-  // Make sure the number of counters matches up.
-  if (Counts.size() != NumCounters) {
-    ReportBadPGOData(CGM, "pgo-data file has inconsistent counters");
-    return true;
-  }
-
-  return false;
-}
-
-void CodeGenPGO::emitWriteoutFunction(GlobalDecl &GD) {
-  if (!CGM.getCodeGenOpts().ProfileInstrGenerate)
-    return;
-
-  llvm::LLVMContext &Ctx = CGM.getLLVMContext();
-
-  llvm::Type *Int32Ty = llvm::Type::getInt32Ty(Ctx);
-  llvm::Type *Int8PtrTy = llvm::Type::getInt8PtrTy(Ctx);
-
-  llvm::Function *WriteoutF =
-    CGM.getModule().getFunction("__llvm_pgo_writeout");
-  if (!WriteoutF) {
-    llvm::FunctionType *WriteoutFTy =
-      llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), false);
-    WriteoutF = llvm::Function::Create(WriteoutFTy,
-                                       llvm::GlobalValue::InternalLinkage,
-                                       "__llvm_pgo_writeout", &CGM.getModule());
-  }
-  WriteoutF->setUnnamedAddr(true);
-  WriteoutF->addFnAttr(llvm::Attribute::NoInline);
-  if (CGM.getCodeGenOpts().DisableRedZone)
-    WriteoutF->addFnAttr(llvm::Attribute::NoRedZone);
-
-  llvm::BasicBlock *BB = WriteoutF->empty() ?
-    llvm::BasicBlock::Create(Ctx, "", WriteoutF) : &WriteoutF->getEntryBlock();
-
-  CGBuilderTy PGOBuilder(BB);
-
-  llvm::Instruction *I = BB->getTerminator();
-  if (!I)
-    I = PGOBuilder.CreateRetVoid();
-  PGOBuilder.SetInsertPoint(I);
-
-  llvm::Type *Int64PtrTy = llvm::Type::getInt64PtrTy(Ctx);
-  llvm::Type *Args[] = {
-    Int8PtrTy,                       // const char *MangledName
-    Int32Ty,                         // uint32_t NumCounters
-    Int64PtrTy                       // uint64_t *Counters
-  };
-  llvm::FunctionType *FTy =
-    llvm::FunctionType::get(PGOBuilder.getVoidTy(), Args, false);
-  llvm::Constant *EmitFunc =
-    CGM.getModule().getOrInsertFunction("llvm_pgo_emit", FTy);
-
-  llvm::Constant *MangledName =
-    CGM.GetAddrOfConstantCString(CGM.getMangledName(GD), "__llvm_pgo_name");
-  MangledName = llvm::ConstantExpr::getBitCast(MangledName, Int8PtrTy);
-  PGOBuilder.CreateCall3(EmitFunc, MangledName,
-                         PGOBuilder.getInt32(NumRegionCounters),
-                         PGOBuilder.CreateBitCast(RegionCounters, Int64PtrTy));
-}
-
-llvm::Function *CodeGenPGO::emitInitialization(CodeGenModule &CGM) {
-  llvm::Function *WriteoutF =
-    CGM.getModule().getFunction("__llvm_pgo_writeout");
-  if (!WriteoutF)
-    return NULL;
-
-  // Create a small bit of code that registers the "__llvm_pgo_writeout" to
-  // be executed at exit.
-  llvm::Function *F = CGM.getModule().getFunction("__llvm_pgo_init");
-  if (F)
-    return NULL;
-
-  llvm::LLVMContext &Ctx = CGM.getLLVMContext();
-  llvm::FunctionType *FTy = llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx),
-                                                    false);
-  F = llvm::Function::Create(FTy, llvm::GlobalValue::InternalLinkage,
-                             "__llvm_pgo_init", &CGM.getModule());
-  F->setUnnamedAddr(true);
-  F->setLinkage(llvm::GlobalValue::InternalLinkage);
-  F->addFnAttr(llvm::Attribute::NoInline);
-  if (CGM.getCodeGenOpts().DisableRedZone)
-    F->addFnAttr(llvm::Attribute::NoRedZone);
-
-  llvm::BasicBlock *BB = llvm::BasicBlock::Create(CGM.getLLVMContext(), "", F);
-  CGBuilderTy PGOBuilder(BB);
-
-  FTy = llvm::FunctionType::get(PGOBuilder.getVoidTy(), false);
-  llvm::Type *Params[] = {
-    llvm::PointerType::get(FTy, 0)
-  };
-  FTy = llvm::FunctionType::get(PGOBuilder.getVoidTy(), Params, false);
-
-  // Inialize the environment and register the local writeout function.
-  llvm::Constant *PGOInit =
-    CGM.getModule().getOrInsertFunction("llvm_pgo_init", FTy);
-  PGOBuilder.CreateCall(PGOInit, WriteoutF);
-  PGOBuilder.CreateRetVoid();
-
-  return F;
+  // Hide the symbol so that we correctly get a copy for each executable.
+  if (!llvm::GlobalValue::isLocalLinkage(FuncNameVar->getLinkage()))
+    FuncNameVar->setVisibility(llvm::GlobalValue::HiddenVisibility);
 }
 
 namespace {
-  /// A StmtVisitor that fills a map of statements to PGO counters.
-  struct MapRegionCounters : public ConstStmtVisitor<MapRegionCounters> {
+/// \brief Stable hasher for PGO region counters.
+///
+/// PGOHash produces a stable hash of a given function's control flow.
+///
+/// Changing the output of this hash will invalidate all previously generated
+/// profiles -- i.e., don't do it.
+///
+/// \note  When this hash does eventually change (years?), we still need to
+/// support old hashes.  We'll need to pull in the version number from the
+/// profile data format and use the matching hash function.
+class PGOHash {
+  uint64_t Working;
+  unsigned Count;
+  llvm::MD5 MD5;
+
+  static const int NumBitsPerType = 6;
+  static const unsigned NumTypesPerWord = sizeof(uint64_t) * 8 / NumBitsPerType;
+  static const unsigned TooBig = 1u << NumBitsPerType;
+
+public:
+  /// \brief Hash values for AST nodes.
+  ///
+  /// Distinct values for AST nodes that have region counters attached.
+  ///
+  /// These values must be stable.  All new members must be added at the end,
+  /// and no members should be removed.  Changing the enumeration value for an
+  /// AST node will affect the hash of every function that contains that node.
+  enum HashType : unsigned char {
+    None = 0,
+    LabelStmt = 1,
+    WhileStmt,
+    DoStmt,
+    ForStmt,
+    CXXForRangeStmt,
+    ObjCForCollectionStmt,
+    SwitchStmt,
+    CaseStmt,
+    DefaultStmt,
+    IfStmt,
+    CXXTryStmt,
+    CXXCatchStmt,
+    ConditionalOperator,
+    BinaryOperatorLAnd,
+    BinaryOperatorLOr,
+    BinaryConditionalOperator,
+
+    // Keep this last.  It's for the static assert that follows.
+    LastHashType
+  };
+  static_assert(LastHashType <= TooBig, "Too many types in HashType");
+
+  // TODO: When this format changes, take in a version number here, and use the
+  // old hash calculation for file formats that used the old hash.
+  PGOHash() : Working(0), Count(0) {}
+  void combine(HashType Type);
+  uint64_t finalize();
+};
+const int PGOHash::NumBitsPerType;
+const unsigned PGOHash::NumTypesPerWord;
+const unsigned PGOHash::TooBig;
+
+  /// A RecursiveASTVisitor that fills a map of statements to PGO counters.
+  struct MapRegionCounters : public RecursiveASTVisitor<MapRegionCounters> {
     /// The next counter value to assign.
     unsigned NextCounter;
+    /// The function hash.
+    PGOHash Hash;
     /// The map of statements to counters.
-    llvm::DenseMap<const Stmt*, unsigned> *CounterMap;
+    llvm::DenseMap<const Stmt *, unsigned> &CounterMap;
 
-    MapRegionCounters(llvm::DenseMap<const Stmt*, unsigned> *CounterMap) :
-      NextCounter(0), CounterMap(CounterMap) {
+    MapRegionCounters(llvm::DenseMap<const Stmt *, unsigned> &CounterMap)
+        : NextCounter(0), CounterMap(CounterMap) {}
+
+    // Blocks and lambdas are handled as separate functions, so we need not
+    // traverse them in the parent context.
+    bool TraverseBlockExpr(BlockExpr *BE) { return true; }
+    bool TraverseLambdaBody(LambdaExpr *LE) { return true; }
+    bool TraverseCapturedStmt(CapturedStmt *CS) { return true; }
+
+    bool VisitDecl(const Decl *D) {
+      switch (D->getKind()) {
+      default:
+        break;
+      case Decl::Function:
+      case Decl::CXXMethod:
+      case Decl::CXXConstructor:
+      case Decl::CXXDestructor:
+      case Decl::CXXConversion:
+      case Decl::ObjCMethod:
+      case Decl::Block:
+      case Decl::Captured:
+        CounterMap[D->getBody()] = NextCounter++;
+        break;
+      }
+      return true;
     }
 
-    void VisitChildren(const Stmt *S) {
-      for (Stmt::const_child_range I = S->children(); I; ++I)
-        if (*I)
-         this->Visit(*I);
-    }
-    void VisitStmt(const Stmt *S) { VisitChildren(S); }
+    bool VisitStmt(const Stmt *S) {
+      auto Type = getHashType(S);
+      if (Type == PGOHash::None)
+        return true;
 
-    /// Assign a counter to track entry to the function body.
-    void VisitFunctionDecl(const FunctionDecl *S) {
-      (*CounterMap)[S->getBody()] = NextCounter++;
-      Visit(S->getBody());
+      CounterMap[S] = NextCounter++;
+      Hash.combine(Type);
+      return true;
     }
-    /// Assign a counter to track the block following a label.
-    void VisitLabelStmt(const LabelStmt *S) {
-      (*CounterMap)[S] = NextCounter++;
-      Visit(S->getSubStmt());
-    }
-    /// Assign a counter for the body of a while loop.
-    void VisitWhileStmt(const WhileStmt *S) {
-      (*CounterMap)[S] = NextCounter++;
-      Visit(S->getCond());
-      Visit(S->getBody());
-    }
-    /// Assign a counter for the body of a do-while loop.
-    void VisitDoStmt(const DoStmt *S) {
-      (*CounterMap)[S] = NextCounter++;
-      Visit(S->getBody());
-      Visit(S->getCond());
-    }
-    /// Assign a counter for the body of a for loop.
-    void VisitForStmt(const ForStmt *S) {
-      (*CounterMap)[S] = NextCounter++;
-      if (S->getInit())
-        Visit(S->getInit());
-      const Expr *E;
-      if ((E = S->getCond()))
-        Visit(E);
-      if ((E = S->getInc()))
-        Visit(E);
-      Visit(S->getBody());
-    }
-    /// Assign a counter for the body of a for-range loop.
-    void VisitCXXForRangeStmt(const CXXForRangeStmt *S) {
-      (*CounterMap)[S] = NextCounter++;
-      Visit(S->getRangeStmt());
-      Visit(S->getBeginEndStmt());
-      Visit(S->getCond());
-      Visit(S->getLoopVarStmt());
-      Visit(S->getBody());
-      Visit(S->getInc());
-    }
-    /// Assign a counter for the body of a for-collection loop.
-    void VisitObjCForCollectionStmt(const ObjCForCollectionStmt *S) {
-      (*CounterMap)[S] = NextCounter++;
-      Visit(S->getElement());
-      Visit(S->getBody());
-    }
-    /// Assign a counter for the exit block of the switch statement.
-    void VisitSwitchStmt(const SwitchStmt *S) {
-      (*CounterMap)[S] = NextCounter++;
-      Visit(S->getCond());
-      Visit(S->getBody());
-    }
-    /// Assign a counter for a particular case in a switch. This counts jumps
-    /// from the switch header as well as fallthrough from the case before this
-    /// one.
-    void VisitCaseStmt(const CaseStmt *S) {
-      (*CounterMap)[S] = NextCounter++;
-      Visit(S->getSubStmt());
-    }
-    /// Assign a counter for the default case of a switch statement. The count
-    /// is the number of branches from the loop header to the default, and does
-    /// not include fallthrough from previous cases. If we have multiple
-    /// conditional branch blocks from the switch instruction to the default
-    /// block, as with large GNU case ranges, this is the counter for the last
-    /// edge in that series, rather than the first.
-    void VisitDefaultStmt(const DefaultStmt *S) {
-      (*CounterMap)[S] = NextCounter++;
-      Visit(S->getSubStmt());
-    }
-    /// Assign a counter for the "then" part of an if statement. The count for
-    /// the "else" part, if it exists, will be calculated from this counter.
-    void VisitIfStmt(const IfStmt *S) {
-      (*CounterMap)[S] = NextCounter++;
-      Visit(S->getCond());
-      Visit(S->getThen());
-      if (S->getElse())
-        Visit(S->getElse());
-    }
-    /// Assign a counter for the continuation block of a C++ try statement.
-    void VisitCXXTryStmt(const CXXTryStmt *S) {
-      (*CounterMap)[S] = NextCounter++;
-      Visit(S->getTryBlock());
-      for (unsigned I = 0, E = S->getNumHandlers(); I < E; ++I)
-        Visit(S->getHandler(I));
-    }
-    /// Assign a counter for a catch statement's handler block.
-    void VisitCXXCatchStmt(const CXXCatchStmt *S) {
-      (*CounterMap)[S] = NextCounter++;
-      Visit(S->getHandlerBlock());
-    }
-    /// Assign a counter for the "true" part of a conditional operator. The
-    /// count in the "false" part will be calculated from this counter.
-    void VisitConditionalOperator(const ConditionalOperator *E) {
-      (*CounterMap)[E] = NextCounter++;
-      Visit(E->getCond());
-      Visit(E->getTrueExpr());
-      Visit(E->getFalseExpr());
-    }
-    /// Assign a counter for the right hand side of a logical and operator.
-    void VisitBinLAnd(const BinaryOperator *E) {
-      (*CounterMap)[E] = NextCounter++;
-      Visit(E->getLHS());
-      Visit(E->getRHS());
-    }
-    /// Assign a counter for the right hand side of a logical or operator.
-    void VisitBinLOr(const BinaryOperator *E) {
-      (*CounterMap)[E] = NextCounter++;
-      Visit(E->getLHS());
-      Visit(E->getRHS());
+    PGOHash::HashType getHashType(const Stmt *S) {
+      switch (S->getStmtClass()) {
+      default:
+        break;
+      case Stmt::LabelStmtClass:
+        return PGOHash::LabelStmt;
+      case Stmt::WhileStmtClass:
+        return PGOHash::WhileStmt;
+      case Stmt::DoStmtClass:
+        return PGOHash::DoStmt;
+      case Stmt::ForStmtClass:
+        return PGOHash::ForStmt;
+      case Stmt::CXXForRangeStmtClass:
+        return PGOHash::CXXForRangeStmt;
+      case Stmt::ObjCForCollectionStmtClass:
+        return PGOHash::ObjCForCollectionStmt;
+      case Stmt::SwitchStmtClass:
+        return PGOHash::SwitchStmt;
+      case Stmt::CaseStmtClass:
+        return PGOHash::CaseStmt;
+      case Stmt::DefaultStmtClass:
+        return PGOHash::DefaultStmt;
+      case Stmt::IfStmtClass:
+        return PGOHash::IfStmt;
+      case Stmt::CXXTryStmtClass:
+        return PGOHash::CXXTryStmt;
+      case Stmt::CXXCatchStmtClass:
+        return PGOHash::CXXCatchStmt;
+      case Stmt::ConditionalOperatorClass:
+        return PGOHash::ConditionalOperator;
+      case Stmt::BinaryConditionalOperatorClass:
+        return PGOHash::BinaryConditionalOperator;
+      case Stmt::BinaryOperatorClass: {
+        const BinaryOperator *BO = cast<BinaryOperator>(S);
+        if (BO->getOpcode() == BO_LAnd)
+          return PGOHash::BinaryOperatorLAnd;
+        if (BO->getOpcode() == BO_LOr)
+          return PGOHash::BinaryOperatorLOr;
+        break;
+      }
+      }
+      return PGOHash::None;
     }
   };
 
@@ -401,9 +239,9 @@ namespace {
     bool RecordNextStmtCount;
 
     /// The map of statements to count values.
-    llvm::DenseMap<const Stmt*, uint64_t> *CountMap;
+    llvm::DenseMap<const Stmt *, uint64_t> &CountMap;
 
-    /// BreakContinueStack - Keep counts of breaks and continues inside loops. 
+    /// BreakContinueStack - Keep counts of breaks and continues inside loops.
     struct BreakContinue {
       uint64_t BreakCount;
       uint64_t ContinueCount;
@@ -411,14 +249,13 @@ namespace {
     };
     SmallVector<BreakContinue, 8> BreakContinueStack;
 
-    ComputeRegionCounts(llvm::DenseMap<const Stmt*, uint64_t> *CountMap,
-                        CodeGenPGO &PGO) :
-      PGO(PGO), RecordNextStmtCount(false), CountMap(CountMap) {
-    }
+    ComputeRegionCounts(llvm::DenseMap<const Stmt *, uint64_t> &CountMap,
+                        CodeGenPGO &PGO)
+        : PGO(PGO), RecordNextStmtCount(false), CountMap(CountMap) {}
 
     void RecordStmtCount(const Stmt *S) {
       if (RecordNextStmtCount) {
-        (*CountMap)[S] = PGO.getCurrentRegionCount();
+        CountMap[S] = PGO.getCurrentRegionCount();
         RecordNextStmtCount = false;
       }
     }
@@ -431,11 +268,41 @@ namespace {
       }
     }
 
-    void VisitFunctionDecl(const FunctionDecl *S) {
-      RegionCounter Cnt(PGO, S->getBody());
+    void VisitFunctionDecl(const FunctionDecl *D) {
+      // Counter tracks entry to the function body.
+      RegionCounter Cnt(PGO, D->getBody());
       Cnt.beginRegion();
-      (*CountMap)[S->getBody()] = PGO.getCurrentRegionCount();
-      Visit(S->getBody());
+      CountMap[D->getBody()] = PGO.getCurrentRegionCount();
+      Visit(D->getBody());
+    }
+
+    // Skip lambda expressions. We visit these as FunctionDecls when we're
+    // generating them and aren't interested in the body when generating a
+    // parent context.
+    void VisitLambdaExpr(const LambdaExpr *LE) {}
+
+    void VisitCapturedDecl(const CapturedDecl *D) {
+      // Counter tracks entry to the capture body.
+      RegionCounter Cnt(PGO, D->getBody());
+      Cnt.beginRegion();
+      CountMap[D->getBody()] = PGO.getCurrentRegionCount();
+      Visit(D->getBody());
+    }
+
+    void VisitObjCMethodDecl(const ObjCMethodDecl *D) {
+      // Counter tracks entry to the method body.
+      RegionCounter Cnt(PGO, D->getBody());
+      Cnt.beginRegion();
+      CountMap[D->getBody()] = PGO.getCurrentRegionCount();
+      Visit(D->getBody());
+    }
+
+    void VisitBlockDecl(const BlockDecl *D) {
+      // Counter tracks entry to the block body.
+      RegionCounter Cnt(PGO, D->getBody());
+      Cnt.beginRegion();
+      CountMap[D->getBody()] = PGO.getCurrentRegionCount();
+      Visit(D->getBody());
     }
 
     void VisitReturnStmt(const ReturnStmt *S) {
@@ -454,9 +321,10 @@ namespace {
 
     void VisitLabelStmt(const LabelStmt *S) {
       RecordNextStmtCount = false;
+      // Counter tracks the block following the label.
       RegionCounter Cnt(PGO, S);
       Cnt.beginRegion();
-      (*CountMap)[S] = PGO.getCurrentRegionCount();
+      CountMap[S] = PGO.getCurrentRegionCount();
       Visit(S->getSubStmt());
     }
 
@@ -478,12 +346,13 @@ namespace {
 
     void VisitWhileStmt(const WhileStmt *S) {
       RecordStmtCount(S);
+      // Counter tracks the body of the loop.
       RegionCounter Cnt(PGO, S);
       BreakContinueStack.push_back(BreakContinue());
       // Visit the body region first so the break/continue adjustments can be
       // included when visiting the condition.
       Cnt.beginRegion();
-      (*CountMap)[S->getBody()] = PGO.getCurrentRegionCount();
+      CountMap[S->getBody()] = PGO.getCurrentRegionCount();
       Visit(S->getBody());
       Cnt.adjustForControlFlow();
 
@@ -494,7 +363,7 @@ namespace {
       BreakContinue BC = BreakContinueStack.pop_back_val();
       Cnt.setCurrentRegionCount(Cnt.getParentCount() +
                                 Cnt.getAdjustedCount() + BC.ContinueCount);
-      (*CountMap)[S->getCond()] = PGO.getCurrentRegionCount();
+      CountMap[S->getCond()] = PGO.getCurrentRegionCount();
       Visit(S->getCond());
       Cnt.adjustForControlFlow();
       Cnt.applyAdjustmentsToRegion(BC.BreakCount + BC.ContinueCount);
@@ -503,10 +372,11 @@ namespace {
 
     void VisitDoStmt(const DoStmt *S) {
       RecordStmtCount(S);
+      // Counter tracks the body of the loop.
       RegionCounter Cnt(PGO, S);
       BreakContinueStack.push_back(BreakContinue());
       Cnt.beginRegion(/*AddIncomingFallThrough=*/true);
-      (*CountMap)[S->getBody()] = PGO.getCurrentRegionCount();
+      CountMap[S->getBody()] = PGO.getCurrentRegionCount();
       Visit(S->getBody());
       Cnt.adjustForControlFlow();
 
@@ -518,7 +388,7 @@ namespace {
       // with while loops but for different reasons.
       Cnt.setCurrentRegionCount(Cnt.getParentCount() +
                                 Cnt.getAdjustedCount() + BC.ContinueCount);
-      (*CountMap)[S->getCond()] = PGO.getCurrentRegionCount();
+      CountMap[S->getCond()] = PGO.getCurrentRegionCount();
       Visit(S->getCond());
       Cnt.adjustForControlFlow();
       Cnt.applyAdjustmentsToRegion(BC.BreakCount + BC.ContinueCount);
@@ -529,12 +399,13 @@ namespace {
       RecordStmtCount(S);
       if (S->getInit())
         Visit(S->getInit());
+      // Counter tracks the body of the loop.
       RegionCounter Cnt(PGO, S);
       BreakContinueStack.push_back(BreakContinue());
       // Visit the body region first. (This is basically the same as a while
       // loop; see further comments in VisitWhileStmt.)
       Cnt.beginRegion();
-      (*CountMap)[S->getBody()] = PGO.getCurrentRegionCount();
+      CountMap[S->getBody()] = PGO.getCurrentRegionCount();
       Visit(S->getBody());
       Cnt.adjustForControlFlow();
 
@@ -543,7 +414,7 @@ namespace {
       if (S->getInc()) {
         Cnt.setCurrentRegionCount(PGO.getCurrentRegionCount() +
                                   BreakContinueStack.back().ContinueCount);
-        (*CountMap)[S->getInc()] = PGO.getCurrentRegionCount();
+        CountMap[S->getInc()] = PGO.getCurrentRegionCount();
         Visit(S->getInc());
         Cnt.adjustForControlFlow();
       }
@@ -555,7 +426,7 @@ namespace {
         Cnt.setCurrentRegionCount(Cnt.getParentCount() +
                                   Cnt.getAdjustedCount() +
                                   BC.ContinueCount);
-        (*CountMap)[S->getCond()] = PGO.getCurrentRegionCount();
+        CountMap[S->getCond()] = PGO.getCurrentRegionCount();
         Visit(S->getCond());
         Cnt.adjustForControlFlow();
       }
@@ -567,12 +438,13 @@ namespace {
       RecordStmtCount(S);
       Visit(S->getRangeStmt());
       Visit(S->getBeginEndStmt());
+      // Counter tracks the body of the loop.
       RegionCounter Cnt(PGO, S);
       BreakContinueStack.push_back(BreakContinue());
       // Visit the body region first. (This is basically the same as a while
       // loop; see further comments in VisitWhileStmt.)
       Cnt.beginRegion();
-      (*CountMap)[S->getLoopVarStmt()] = PGO.getCurrentRegionCount();
+      CountMap[S->getLoopVarStmt()] = PGO.getCurrentRegionCount();
       Visit(S->getLoopVarStmt());
       Visit(S->getBody());
       Cnt.adjustForControlFlow();
@@ -581,7 +453,7 @@ namespace {
       // the count for all the continue statements.
       Cnt.setCurrentRegionCount(PGO.getCurrentRegionCount() +
                                 BreakContinueStack.back().ContinueCount);
-      (*CountMap)[S->getInc()] = PGO.getCurrentRegionCount();
+      CountMap[S->getInc()] = PGO.getCurrentRegionCount();
       Visit(S->getInc());
       Cnt.adjustForControlFlow();
 
@@ -591,7 +463,7 @@ namespace {
       Cnt.setCurrentRegionCount(Cnt.getParentCount() +
                                 Cnt.getAdjustedCount() +
                                 BC.ContinueCount);
-      (*CountMap)[S->getCond()] = PGO.getCurrentRegionCount();
+      CountMap[S->getCond()] = PGO.getCurrentRegionCount();
       Visit(S->getCond());
       Cnt.adjustForControlFlow();
       Cnt.applyAdjustmentsToRegion(BC.BreakCount + BC.ContinueCount);
@@ -601,10 +473,11 @@ namespace {
     void VisitObjCForCollectionStmt(const ObjCForCollectionStmt *S) {
       RecordStmtCount(S);
       Visit(S->getElement());
+      // Counter tracks the body of the loop.
       RegionCounter Cnt(PGO, S);
       BreakContinueStack.push_back(BreakContinue());
       Cnt.beginRegion();
-      (*CountMap)[S->getBody()] = PGO.getCurrentRegionCount();
+      CountMap[S->getBody()] = PGO.getCurrentRegionCount();
       Visit(S->getBody());
       BreakContinue BC = BreakContinueStack.pop_back_val();
       Cnt.adjustForControlFlow();
@@ -622,6 +495,7 @@ namespace {
       BreakContinue BC = BreakContinueStack.pop_back_val();
       if (!BreakContinueStack.empty())
         BreakContinueStack.back().ContinueCount += BC.ContinueCount;
+      // Counter tracks the exit block of the switch.
       RegionCounter ExitCnt(PGO, S);
       ExitCnt.beginRegion();
       RecordNextStmtCount = true;
@@ -629,35 +503,42 @@ namespace {
 
     void VisitCaseStmt(const CaseStmt *S) {
       RecordNextStmtCount = false;
+      // Counter for this particular case. This counts only jumps from the
+      // switch header and does not include fallthrough from the case before
+      // this one.
       RegionCounter Cnt(PGO, S);
       Cnt.beginRegion(/*AddIncomingFallThrough=*/true);
-      (*CountMap)[S] = Cnt.getCount();
+      CountMap[S] = Cnt.getCount();
       RecordNextStmtCount = true;
       Visit(S->getSubStmt());
     }
 
     void VisitDefaultStmt(const DefaultStmt *S) {
       RecordNextStmtCount = false;
+      // Counter for this default case. This does not include fallthrough from
+      // the previous case.
       RegionCounter Cnt(PGO, S);
       Cnt.beginRegion(/*AddIncomingFallThrough=*/true);
-      (*CountMap)[S] = Cnt.getCount();
+      CountMap[S] = Cnt.getCount();
       RecordNextStmtCount = true;
       Visit(S->getSubStmt());
     }
 
     void VisitIfStmt(const IfStmt *S) {
       RecordStmtCount(S);
+      // Counter tracks the "then" part of an if statement. The count for
+      // the "else" part, if it exists, will be calculated from this counter.
       RegionCounter Cnt(PGO, S);
       Visit(S->getCond());
 
       Cnt.beginRegion();
-      (*CountMap)[S->getThen()] = PGO.getCurrentRegionCount();
+      CountMap[S->getThen()] = PGO.getCurrentRegionCount();
       Visit(S->getThen());
       Cnt.adjustForControlFlow();
 
       if (S->getElse()) {
         Cnt.beginElseRegion();
-        (*CountMap)[S->getElse()] = PGO.getCurrentRegionCount();
+        CountMap[S->getElse()] = PGO.getCurrentRegionCount();
         Visit(S->getElse());
         Cnt.adjustForControlFlow();
       }
@@ -670,6 +551,7 @@ namespace {
       Visit(S->getTryBlock());
       for (unsigned I = 0, E = S->getNumHandlers(); I < E; ++I)
         Visit(S->getHandler(I));
+      // Counter tracks the continuation block of the try statement.
       RegionCounter Cnt(PGO, S);
       Cnt.beginRegion();
       RecordNextStmtCount = true;
@@ -677,24 +559,28 @@ namespace {
 
     void VisitCXXCatchStmt(const CXXCatchStmt *S) {
       RecordNextStmtCount = false;
+      // Counter tracks the catch statement's handler block.
       RegionCounter Cnt(PGO, S);
       Cnt.beginRegion();
-      (*CountMap)[S] = PGO.getCurrentRegionCount();
+      CountMap[S] = PGO.getCurrentRegionCount();
       Visit(S->getHandlerBlock());
     }
 
-    void VisitConditionalOperator(const ConditionalOperator *E) {
+    void VisitAbstractConditionalOperator(
+        const AbstractConditionalOperator *E) {
       RecordStmtCount(E);
+      // Counter tracks the "true" part of a conditional operator. The
+      // count in the "false" part will be calculated from this counter.
       RegionCounter Cnt(PGO, E);
       Visit(E->getCond());
 
       Cnt.beginRegion();
-      (*CountMap)[E->getTrueExpr()] = PGO.getCurrentRegionCount();
+      CountMap[E->getTrueExpr()] = PGO.getCurrentRegionCount();
       Visit(E->getTrueExpr());
       Cnt.adjustForControlFlow();
 
       Cnt.beginElseRegion();
-      (*CountMap)[E->getFalseExpr()] = PGO.getCurrentRegionCount();
+      CountMap[E->getFalseExpr()] = PGO.getCurrentRegionCount();
       Visit(E->getFalseExpr());
       Cnt.adjustForControlFlow();
 
@@ -704,10 +590,11 @@ namespace {
 
     void VisitBinLAnd(const BinaryOperator *E) {
       RecordStmtCount(E);
+      // Counter tracks the right hand side of a logical and operator.
       RegionCounter Cnt(PGO, E);
       Visit(E->getLHS());
       Cnt.beginRegion();
-      (*CountMap)[E->getRHS()] = PGO.getCurrentRegionCount();
+      CountMap[E->getRHS()] = PGO.getCurrentRegionCount();
       Visit(E->getRHS());
       Cnt.adjustForControlFlow();
       Cnt.applyAdjustmentsToRegion(0);
@@ -716,10 +603,11 @@ namespace {
 
     void VisitBinLOr(const BinaryOperator *E) {
       RecordStmtCount(E);
+      // Counter tracks the right hand side of a logical or operator.
       RegionCounter Cnt(PGO, E);
       Visit(E->getLHS());
       Cnt.beginRegion();
-      (*CountMap)[E->getRHS()] = PGO.getCurrentRegionCount();
+      CountMap[E->getRHS()] = PGO.getCurrentRegionCount();
       Visit(E->getRHS());
       Cnt.adjustForControlFlow();
       Cnt.applyAdjustmentsToRegion(0);
@@ -728,118 +616,276 @@ namespace {
   };
 }
 
-void CodeGenPGO::assignRegionCounters(GlobalDecl &GD) {
+void PGOHash::combine(HashType Type) {
+  // Check that we never combine 0 and only have six bits.
+  assert(Type && "Hash is invalid: unexpected type 0");
+  assert(unsigned(Type) < TooBig && "Hash is invalid: too many types");
+
+  // Pass through MD5 if enough work has built up.
+  if (Count && Count % NumTypesPerWord == 0) {
+    using namespace llvm::support;
+    uint64_t Swapped = endian::byte_swap<uint64_t, little>(Working);
+    MD5.update(llvm::makeArrayRef((uint8_t *)&Swapped, sizeof(Swapped)));
+    Working = 0;
+  }
+
+  // Accumulate the current type.
+  ++Count;
+  Working = Working << NumBitsPerType | Type;
+}
+
+uint64_t PGOHash::finalize() {
+  // Use Working as the hash directly if we never used MD5.
+  if (Count <= NumTypesPerWord)
+    // No need to byte swap here, since none of the math was endian-dependent.
+    // This number will be byte-swapped as required on endianness transitions,
+    // so we will see the same value on the other side.
+    return Working;
+
+  // Check for remaining work in Working.
+  if (Working)
+    MD5.update(Working);
+
+  // Finalize the MD5 and return the hash.
+  llvm::MD5::MD5Result Result;
+  MD5.final(Result);
+  using namespace llvm::support;
+  return endian::read<uint64_t, little, unaligned>(Result);
+}
+
+void CodeGenPGO::checkGlobalDecl(GlobalDecl GD) {
+  // Make sure we only emit coverage mapping for one constructor/destructor.
+  // Clang emits several functions for the constructor and the destructor of
+  // a class. Every function is instrumented, but we only want to provide
+  // coverage for one of them. Because of that we only emit the coverage mapping
+  // for the base constructor/destructor.
+  if ((isa<CXXConstructorDecl>(GD.getDecl()) &&
+       GD.getCtorType() != Ctor_Base) ||
+      (isa<CXXDestructorDecl>(GD.getDecl()) &&
+       GD.getDtorType() != Dtor_Base)) {
+    SkipCoverageMapping = true;
+  }
+}
+
+void CodeGenPGO::assignRegionCounters(const Decl *D, llvm::Function *Fn) {
   bool InstrumentRegions = CGM.getCodeGenOpts().ProfileInstrGenerate;
-  PGOProfileData *PGOData = CGM.getPGOData();
-  if (!InstrumentRegions && !PGOData)
+  llvm::IndexedInstrProfReader *PGOReader = CGM.getPGOReader();
+  if (!InstrumentRegions && !PGOReader)
     return;
-  const Decl *D = GD.getDecl();
-  if (!D)
+  if (D->isImplicit())
     return;
+  CGM.ClearUnusedCoverageMapping(D);
+  setFuncName(Fn);
+
   mapRegionCounters(D);
-  if (InstrumentRegions)
-    emitCounterVariables();
-  if (PGOData) {
-    loadRegionCounts(GD, PGOData);
+  if (CGM.getCodeGenOpts().CoverageMapping)
+    emitCounterRegionMapping(D);
+  if (PGOReader) {
+    SourceManager &SM = CGM.getContext().getSourceManager();
+    loadRegionCounts(PGOReader, SM.isInMainFile(D->getLocation()));
     computeRegionCounts(D);
+    applyFunctionAttributes(PGOReader, Fn);
   }
 }
 
 void CodeGenPGO::mapRegionCounters(const Decl *D) {
-  RegionCounterMap = new llvm::DenseMap<const Stmt*, unsigned>();
-  MapRegionCounters Walker(RegionCounterMap);
+  RegionCounterMap.reset(new llvm::DenseMap<const Stmt *, unsigned>);
+  MapRegionCounters Walker(*RegionCounterMap);
   if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(D))
-    Walker.VisitFunctionDecl(FD);
+    Walker.TraverseDecl(const_cast<FunctionDecl *>(FD));
+  else if (const ObjCMethodDecl *MD = dyn_cast_or_null<ObjCMethodDecl>(D))
+    Walker.TraverseDecl(const_cast<ObjCMethodDecl *>(MD));
+  else if (const BlockDecl *BD = dyn_cast_or_null<BlockDecl>(D))
+    Walker.TraverseDecl(const_cast<BlockDecl *>(BD));
+  else if (const CapturedDecl *CD = dyn_cast_or_null<CapturedDecl>(D))
+    Walker.TraverseDecl(const_cast<CapturedDecl *>(CD));
+  assert(Walker.NextCounter > 0 && "no entry counter mapped for decl");
   NumRegionCounters = Walker.NextCounter;
+  FunctionHash = Walker.Hash.finalize();
+}
+
+void CodeGenPGO::emitCounterRegionMapping(const Decl *D) {
+  if (SkipCoverageMapping)
+    return;
+  // Don't map the functions inside the system headers
+  auto Loc = D->getBody()->getLocStart();
+  if (CGM.getContext().getSourceManager().isInSystemHeader(Loc))
+    return;
+
+  std::string CoverageMapping;
+  llvm::raw_string_ostream OS(CoverageMapping);
+  CoverageMappingGen MappingGen(*CGM.getCoverageMapping(),
+                                CGM.getContext().getSourceManager(),
+                                CGM.getLangOpts(), RegionCounterMap.get());
+  MappingGen.emitCounterMapping(D, OS);
+  OS.flush();
+
+  if (CoverageMapping.empty())
+    return;
+
+  CGM.getCoverageMapping()->addFunctionMappingRecord(
+      FuncNameVar, FuncName, FunctionHash, CoverageMapping);
+}
+
+void
+CodeGenPGO::emitEmptyCounterMapping(const Decl *D, StringRef FuncName,
+                                    llvm::GlobalValue::LinkageTypes Linkage) {
+  if (SkipCoverageMapping)
+    return;
+  setFuncName(FuncName, Linkage);
+
+  // Don't map the functions inside the system headers
+  auto Loc = D->getBody()->getLocStart();
+  if (CGM.getContext().getSourceManager().isInSystemHeader(Loc))
+    return;
+
+  std::string CoverageMapping;
+  llvm::raw_string_ostream OS(CoverageMapping);
+  CoverageMappingGen MappingGen(*CGM.getCoverageMapping(),
+                                CGM.getContext().getSourceManager(),
+                                CGM.getLangOpts());
+  MappingGen.emitEmptyMapping(D, OS);
+  OS.flush();
+
+  if (CoverageMapping.empty())
+    return;
+
+  CGM.getCoverageMapping()->addFunctionMappingRecord(
+      FuncNameVar, FuncName, FunctionHash, CoverageMapping);
 }
 
 void CodeGenPGO::computeRegionCounts(const Decl *D) {
-  StmtCountMap = new llvm::DenseMap<const Stmt*, uint64_t>();
-  ComputeRegionCounts Walker(StmtCountMap, *this);
+  StmtCountMap.reset(new llvm::DenseMap<const Stmt *, uint64_t>);
+  ComputeRegionCounts Walker(*StmtCountMap, *this);
   if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(D))
     Walker.VisitFunctionDecl(FD);
+  else if (const ObjCMethodDecl *MD = dyn_cast_or_null<ObjCMethodDecl>(D))
+    Walker.VisitObjCMethodDecl(MD);
+  else if (const BlockDecl *BD = dyn_cast_or_null<BlockDecl>(D))
+    Walker.VisitBlockDecl(BD);
+  else if (const CapturedDecl *CD = dyn_cast_or_null<CapturedDecl>(D))
+    Walker.VisitCapturedDecl(const_cast<CapturedDecl *>(CD));
 }
 
-void CodeGenPGO::emitCounterVariables() {
-  llvm::LLVMContext &Ctx = CGM.getLLVMContext();
-  llvm::ArrayType *CounterTy = llvm::ArrayType::get(llvm::Type::getInt64Ty(Ctx),
-                                                    NumRegionCounters);
-  RegionCounters =
-    new llvm::GlobalVariable(CGM.getModule(), CounterTy, false,
-                             llvm::GlobalVariable::PrivateLinkage,
-                             llvm::Constant::getNullValue(CounterTy),
-                             "__llvm_pgo_ctr");
+void
+CodeGenPGO::applyFunctionAttributes(llvm::IndexedInstrProfReader *PGOReader,
+                                    llvm::Function *Fn) {
+  if (!haveRegionCounts())
+    return;
+
+  uint64_t MaxFunctionCount = PGOReader->getMaximumFunctionCount();
+  uint64_t FunctionCount = getRegionCount(0);
+  if (FunctionCount >= (uint64_t)(0.3 * (double)MaxFunctionCount))
+    // Turn on InlineHint attribute for hot functions.
+    // FIXME: 30% is from preliminary tuning on SPEC, it may not be optimal.
+    Fn->addFnAttr(llvm::Attribute::InlineHint);
+  else if (FunctionCount <= (uint64_t)(0.01 * (double)MaxFunctionCount))
+    // Turn on Cold attribute for cold functions.
+    // FIXME: 1% is from preliminary tuning on SPEC, it may not be optimal.
+    Fn->addFnAttr(llvm::Attribute::Cold);
 }
 
 void CodeGenPGO::emitCounterIncrement(CGBuilderTy &Builder, unsigned Counter) {
-  if (!CGM.getCodeGenOpts().ProfileInstrGenerate)
+  if (!CGM.getCodeGenOpts().ProfileInstrGenerate || !RegionCounterMap)
     return;
-  llvm::Value *Addr =
-    Builder.CreateConstInBoundsGEP2_64(RegionCounters, 0, Counter);
-  llvm::Value *Count = Builder.CreateLoad(Addr, "pgocount");
-  Count = Builder.CreateAdd(Count, Builder.getInt64(1));
-  Builder.CreateStore(Count, Addr);
+  if (!Builder.GetInsertPoint())
+    return;
+  auto *I8PtrTy = llvm::Type::getInt8PtrTy(CGM.getLLVMContext());
+  Builder.CreateCall4(CGM.getIntrinsic(llvm::Intrinsic::instrprof_increment),
+                      llvm::ConstantExpr::getBitCast(FuncNameVar, I8PtrTy),
+                      Builder.getInt64(FunctionHash),
+                      Builder.getInt32(NumRegionCounters),
+                      Builder.getInt32(Counter));
 }
 
-void CodeGenPGO::loadRegionCounts(GlobalDecl &GD, PGOProfileData *PGOData) {
-  // For now, ignore the counts from the PGO data file only if the number of
-  // counters does not match. This could be tightened down in the future to
-  // ignore counts when the input changes in various ways, e.g., by comparing a
-  // hash value based on some characteristics of the input.
-  RegionCounts = new std::vector<uint64_t>();
-  if (PGOData->getFunctionCounts(CGM.getMangledName(GD), *RegionCounts) ||
-      RegionCounts->size() != NumRegionCounters) {
-    delete RegionCounts;
-    RegionCounts = 0;
+void CodeGenPGO::loadRegionCounts(llvm::IndexedInstrProfReader *PGOReader,
+                                  bool IsInMainFile) {
+  CGM.getPGOStats().addVisited(IsInMainFile);
+  RegionCounts.clear();
+  if (std::error_code EC =
+          PGOReader->getFunctionCounts(FuncName, FunctionHash, RegionCounts)) {
+    if (EC == llvm::instrprof_error::unknown_function)
+      CGM.getPGOStats().addMissing(IsInMainFile);
+    else if (EC == llvm::instrprof_error::hash_mismatch)
+      CGM.getPGOStats().addMismatched(IsInMainFile);
+    else if (EC == llvm::instrprof_error::malformed)
+      // TODO: Consider a more specific warning for this case.
+      CGM.getPGOStats().addMismatched(IsInMainFile);
+    RegionCounts.clear();
   }
 }
 
-void CodeGenPGO::destroyRegionCounters() {
-  if (RegionCounterMap != 0)
-    delete RegionCounterMap;
-  if (StmtCountMap != 0)
-    delete StmtCountMap;
-  if (RegionCounts != 0)
-    delete RegionCounts;
+/// \brief Calculate what to divide by to scale weights.
+///
+/// Given the maximum weight, calculate a divisor that will scale all the
+/// weights to strictly less than UINT32_MAX.
+static uint64_t calculateWeightScale(uint64_t MaxWeight) {
+  return MaxWeight < UINT32_MAX ? 1 : MaxWeight / UINT32_MAX + 1;
+}
+
+/// \brief Scale an individual branch weight (and add 1).
+///
+/// Scale a 64-bit weight down to 32-bits using \c Scale.
+///
+/// According to Laplace's Rule of Succession, it is better to compute the
+/// weight based on the count plus 1, so universally add 1 to the value.
+///
+/// \pre \c Scale was calculated by \a calculateWeightScale() with a weight no
+/// greater than \c Weight.
+static uint32_t scaleBranchWeight(uint64_t Weight, uint64_t Scale) {
+  assert(Scale && "scale by 0?");
+  uint64_t Scaled = Weight / Scale + 1;
+  assert(Scaled <= UINT32_MAX && "overflow 32-bits");
+  return Scaled;
 }
 
 llvm::MDNode *CodeGenPGO::createBranchWeights(uint64_t TrueCount,
                                               uint64_t FalseCount) {
+  // Check for empty weights.
   if (!TrueCount && !FalseCount)
-    return 0;
+    return nullptr;
+
+  // Calculate how to scale down to 32-bits.
+  uint64_t Scale = calculateWeightScale(std::max(TrueCount, FalseCount));
 
   llvm::MDBuilder MDHelper(CGM.getLLVMContext());
-  // TODO: need to scale down to 32-bits
-  // According to Laplace's Rule of Succession, it is better to compute the
-  // weight based on the count plus 1.
-  return MDHelper.createBranchWeights(TrueCount + 1, FalseCount + 1);
+  return MDHelper.createBranchWeights(scaleBranchWeight(TrueCount, Scale),
+                                      scaleBranchWeight(FalseCount, Scale));
 }
 
 llvm::MDNode *CodeGenPGO::createBranchWeights(ArrayRef<uint64_t> Weights) {
-  llvm::MDBuilder MDHelper(CGM.getLLVMContext());
-  // TODO: need to scale down to 32-bits, instead of just truncating.
-  // According to Laplace's Rule of Succession, it is better to compute the
-  // weight based on the count plus 1.
+  // We need at least two elements to create meaningful weights.
+  if (Weights.size() < 2)
+    return nullptr;
+
+  // Check for empty weights.
+  uint64_t MaxWeight = *std::max_element(Weights.begin(), Weights.end());
+  if (MaxWeight == 0)
+    return nullptr;
+
+  // Calculate how to scale down to 32-bits.
+  uint64_t Scale = calculateWeightScale(MaxWeight);
+
   SmallVector<uint32_t, 16> ScaledWeights;
   ScaledWeights.reserve(Weights.size());
-  for (ArrayRef<uint64_t>::iterator WI = Weights.begin(), WE = Weights.end();
-       WI != WE; ++WI) {
-    ScaledWeights.push_back(*WI + 1);
-  }
+  for (uint64_t W : Weights)
+    ScaledWeights.push_back(scaleBranchWeight(W, Scale));
+
+  llvm::MDBuilder MDHelper(CGM.getLLVMContext());
   return MDHelper.createBranchWeights(ScaledWeights);
 }
 
 llvm::MDNode *CodeGenPGO::createLoopWeights(const Stmt *Cond,
                                             RegionCounter &Cnt) {
   if (!haveRegionCounts())
-    return 0;
+    return nullptr;
   uint64_t LoopCount = Cnt.getCount();
   uint64_t CondCount = 0;
   bool Found = getStmtCount(Cond, CondCount);
   assert(Found && "missing expected loop condition count");
   (void)Found;
   if (CondCount == 0)
-    return 0;
+    return nullptr;
   return createBranchWeights(LoopCount,
                              std::max(CondCount, LoopCount) - LoopCount);
 }

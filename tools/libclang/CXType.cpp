@@ -120,7 +120,8 @@ CXType cxtype::MakeCXType(QualType T, CXTranslationUnit TU) {
   if (TK == CXType_Invalid)
     TK = GetTypeKind(T);
 
-  CXType CT = { TK, { TK == CXType_Invalid ? 0 : T.getAsOpaquePtr(), TU }};
+  CXType CT = { TK, { TK == CXType_Invalid ? nullptr
+                                           : T.getAsOpaquePtr(), TU } };
   return CT;
 }
 
@@ -386,7 +387,7 @@ CXCursor clang_getTypeDeclaration(CXType CT) {
   if (!TP)
     return cxcursor::MakeCXCursorInvalid(CXCursor_NoDeclFound);
 
-  Decl *D = 0;
+  Decl *D = nullptr;
 
 try_again:
   switch (TP->getTypeClass()) {
@@ -432,7 +433,7 @@ try_again:
 }
 
 CXString clang_getTypeKindSpelling(enum CXTypeKind K) {
-  const char *s = 0;
+  const char *s = nullptr;
 #define TKIND(X) case CXType_##X: s = ""  #X  ""; break
   switch (K) {
     TKIND(Invalid);
@@ -519,12 +520,16 @@ CXCallingConv clang_getFunctionTypeCallingConv(CXType X) {
       TCALLINGCONV(X86FastCall);
       TCALLINGCONV(X86ThisCall);
       TCALLINGCONV(X86Pascal);
+      TCALLINGCONV(X86VectorCall);
       TCALLINGCONV(X86_64Win64);
       TCALLINGCONV(X86_64SysV);
       TCALLINGCONV(AAPCS);
       TCALLINGCONV(AAPCS_VFP);
       TCALLINGCONV(PnaclCall);
       TCALLINGCONV(IntelOclBicc);
+    case CC_SpirFunction: return CXCallingConv_Unexposed;
+    case CC_SpirKernel: return CXCallingConv_Unexposed;
+      break;
     }
 #undef TCALLINGCONV
   }
@@ -752,15 +757,14 @@ long long clang_Type_getSizeOf(CXType T) {
 }
 
 static long long visitRecordForValidation(const RecordDecl *RD) {
-  for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
-       I != E; ++I){
-    QualType FQT = (*I)->getType();
+  for (const auto *I : RD->fields()){
+    QualType FQT = I->getType();
     if (FQT->isIncompleteType())
       return CXTypeLayoutError_Incomplete;
     if (FQT->isDependentType())
       return CXTypeLayoutError_Dependent;
     // recurse
-    if (const RecordType *ChildType = (*I)->getType()->getAs<RecordType>()) {
+    if (const RecordType *ChildType = I->getType()->getAs<RecordType>()) {
       if (const RecordDecl *Child = ChildType->getDecl()) {
         long long ret = visitRecordForValidation(Child);
         if (ret < 0)
@@ -855,7 +859,7 @@ CXString clang_getDeclObjCTypeEncoding(CXCursor C) {
     if (Ctx.getObjCEncodingForMethodDecl(OMD, encoding))
       return cxstring::createRef("?");
   } else if (const ObjCPropertyDecl *OPD = dyn_cast<ObjCPropertyDecl>(D))
-    Ctx.getObjCEncodingForPropertyDecl(OPD, NULL, encoding);
+    Ctx.getObjCEncodingForPropertyDecl(OPD, nullptr, encoding);
   else if (const FunctionDecl *FD = dyn_cast<FunctionDecl>(D))
     Ctx.getObjCEncodingForFunctionDecl(FD, encoding);
   else {

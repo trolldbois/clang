@@ -108,6 +108,30 @@ bool FindIdenticalExprVisitor::VisitIfStmt(const IfStmt *I) {
   const Stmt *Stmt1 = I->getThen();
   const Stmt *Stmt2 = I->getElse();
 
+  // Check for identical conditions:
+  //
+  // if (b) {
+  //   foo1();
+  // } else if (b) {
+  //   foo2();
+  // }
+  if (Stmt1 && Stmt2) {
+    const Expr *Cond1 = I->getCond();
+    const Stmt *Else = Stmt2;
+    while (const IfStmt *I2 = dyn_cast_or_null<IfStmt>(Else)) {
+      const Expr *Cond2 = I2->getCond();
+      if (isIdenticalStmt(AC->getASTContext(), Cond1, Cond2, false)) {
+        SourceRange Sr = Cond1->getSourceRange();
+        PathDiagnosticLocation ELoc(Cond2, BR.getSourceManager(), AC);
+        BR.EmitBasicReport(AC->getDecl(), Checker, "Identical conditions",
+                           categories::LogicError,
+                           "expression is identical to previous condition",
+                           ELoc, Sr);
+      }
+      Else = I2->getElse();
+    }
+  }
+
   if (!Stmt1 || !Stmt2)
     return true;
 
@@ -421,7 +445,12 @@ static bool isIdenticalStmt(const ASTContext &Ctx, const Stmt *Stmt1,
   case Stmt::IntegerLiteralClass: {
     const IntegerLiteral *IntLit1 = cast<IntegerLiteral>(Stmt1);
     const IntegerLiteral *IntLit2 = cast<IntegerLiteral>(Stmt2);
-    return IntLit1->getValue() == IntLit2->getValue();
+
+    llvm::APInt I1 = IntLit1->getValue();
+    llvm::APInt I2 = IntLit2->getValue();
+    if (I1.getBitWidth() != I2.getBitWidth())
+      return false;
+    return  I1 == I2;
   }
   case Stmt::FloatingLiteralClass: {
     const FloatingLiteral *FloatLit1 = cast<FloatingLiteral>(Stmt1);
@@ -431,7 +460,7 @@ static bool isIdenticalStmt(const ASTContext &Ctx, const Stmt *Stmt1,
   case Stmt::StringLiteralClass: {
     const StringLiteral *StringLit1 = cast<StringLiteral>(Stmt1);
     const StringLiteral *StringLit2 = cast<StringLiteral>(Stmt2);
-    return StringLit1->getString() == StringLit2->getString();
+    return StringLit1->getBytes() == StringLit2->getBytes();
   }
   case Stmt::MemberExprClass: {
     const MemberExpr *MemberStmt1 = cast<MemberExpr>(Stmt1);

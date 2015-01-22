@@ -27,7 +27,7 @@ using namespace ento;
 namespace {
 class UndefCapturedBlockVarChecker
   : public Checker< check::PostStmt<BlockExpr> > {
- mutable OwningPtr<BugType> BT;
+  mutable std::unique_ptr<BugType> BT;
 
 public:
   void checkPostStmt(const BlockExpr *BE, CheckerContext &C) const;
@@ -48,7 +48,7 @@ static const DeclRefExpr *FindBlockDeclRefExpr(const Stmt *S,
         return BR;
     }
 
-  return NULL;
+  return nullptr;
 }
 
 void
@@ -92,8 +92,8 @@ UndefCapturedBlockVarChecker::checkPostStmt(const BlockExpr *BE,
         BugReport *R = new BugReport(*BT, os.str(), N);
         if (const Expr *Ex = FindBlockDeclRefExpr(BE->getBody(), VD))
           R->addRange(Ex->getSourceRange());
-        R->addVisitor(new FindLastStoreBRVisitor(*V, VR,
-                                             /*EnableNullFPSuppression*/false));
+        R->addVisitor(llvm::make_unique<FindLastStoreBRVisitor>(
+            *V, VR, /*EnableNullFPSuppression*/ false));
         R->disablePathPruning();
         // need location of block
         C.emitReport(R);

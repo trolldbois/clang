@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 -analyze -analyzer-checker=core,alpha.core.IdenticalExpr -verify %s
+// RUN: %clang_cc1 -analyze -analyzer-checker=core,alpha.core.IdenticalExpr -w -verify %s
 
 /* Only one expected warning per function allowed at the very end. */
 
@@ -1406,3 +1406,127 @@ void test_identical_logical9(int x, int y) {
     ;
 }
 #pragma clang diagnostic pop
+
+void test_warn_chained_if_stmts_1(int x) {
+  if (x == 1)
+    ;
+  else if (x == 1) // expected-warning {{expression is identical to previous condition}}
+    ;
+}
+
+void test_warn_chained_if_stmts_2(int x) {
+  if (x == 1)
+    ;
+  else if (x == 1) // expected-warning {{expression is identical to previous condition}}
+    ;
+  else if (x == 1) // expected-warning {{expression is identical to previous condition}}
+    ;
+}
+
+void test_warn_chained_if_stmts_3(int x) {
+  if (x == 1)
+    ;
+  else if (x == 2)
+    ;
+  else if (x == 1) // expected-warning {{expression is identical to previous condition}}
+    ;
+}
+
+void test_warn_chained_if_stmts_4(int x) {
+  if (x == 1)
+    ;
+  else if (func())
+    ;
+  else if (x == 1) // expected-warning {{expression is identical to previous condition}}
+    ;
+}
+
+void test_warn_chained_if_stmts_5(int x) {
+  if (x & 1)
+    ;
+  else if (x & 1) // expected-warning {{expression is identical to previous condition}}
+    ;
+}
+
+void test_warn_chained_if_stmts_6(int x) {
+  if (x == 1)
+    ;
+  else if (x == 2)
+    ;
+  else if (x == 2) // expected-warning {{expression is identical to previous condition}}
+    ;
+  else if (x == 3)
+    ;
+}
+
+void test_warn_chained_if_stmts_7(int x) {
+  if (x == 1)
+    ;
+  else if (x == 2)
+    ;
+  else if (x == 3)
+    ;
+  else if (x == 2) // expected-warning {{expression is identical to previous condition}}
+    ;
+  else if (x == 5)
+    ;
+}
+
+void test_warn_chained_if_stmts_8(int x) {
+  if (x == 1)
+    ;
+  else if (x == 2)
+    ;
+  else if (x == 3)
+    ;
+  else if (x == 2) // expected-warning {{expression is identical to previous condition}}
+    ;
+  else if (x == 5)
+    ;
+  else if (x == 3) // expected-warning {{expression is identical to previous condition}}
+    ;
+  else if (x == 7)
+    ;
+}
+
+void test_nowarn_chained_if_stmts_1(int x) {
+  if (func())
+    ;
+  else if (func()) // no-warning
+    ;
+}
+
+void test_nowarn_chained_if_stmts_2(int x) {
+  if (func())
+    ;
+  else if (x == 1)
+    ;
+  else if (func()) // no-warning
+    ;
+}
+
+void test_nowarn_chained_if_stmts_3(int x) {
+  if (x++)
+    ;
+  else if (x++) // no-warning
+    ;
+}
+
+void test_warn_wchar() {
+  const wchar_t * a = 0 ? L"Warning" : L"Warning"; // expected-warning {{identical expressions on both sides of ':' in conditional expression}}
+}
+void test_nowarn_wchar() {
+  const wchar_t * a = 0 ? L"No" : L"Warning";
+}
+
+void test_nowarn_long() {
+  int a = 0, b = 0;
+  long c;
+  if (0) {
+    b -= a;
+    c = 0;
+  } else { // no-warning
+    b -= a;
+    c = 0LL;
+  }
+}

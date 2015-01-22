@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_ANALYSIS_BUGTYPE
-#define LLVM_CLANG_ANALYSIS_BUGTYPE
+#ifndef LLVM_CLANG_STATICANALYZER_CORE_BUGREPORTER_BUGTYPE_H
+#define LLVM_CLANG_STATICANALYZER_CORE_BUGREPORTER_BUGTYPE_H
 
 #include "clang/Basic/LLVM.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/CommonBugCategories.h"
@@ -60,7 +60,7 @@ public:
 
 class BuiltinBug : public BugType {
   const std::string desc;
-  virtual void anchor();
+  void anchor() override;
 public:
   BuiltinBug(class CheckName check, const char *name, const char *description)
       : BugType(check, name, categories::LogicError), desc(description) {}

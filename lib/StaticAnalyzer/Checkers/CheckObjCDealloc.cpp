@@ -28,27 +28,6 @@
 using namespace clang;
 using namespace ento;
 
-static bool scan_dealloc(Stmt *S, Selector Dealloc) {
-
-  if (ObjCMessageExpr *ME = dyn_cast<ObjCMessageExpr>(S))
-    if (ME->getSelector() == Dealloc) {
-      switch (ME->getReceiverKind()) {
-      case ObjCMessageExpr::Instance: return false;
-      case ObjCMessageExpr::SuperInstance: return true;
-      case ObjCMessageExpr::Class: break;
-      case ObjCMessageExpr::SuperClass: break;
-      }
-    }
-
-  // Recurse to children.
-
-  for (Stmt::child_iterator I = S->child_begin(), E= S->child_end(); I!=E; ++I)
-    if (*I && scan_dealloc(*I, Dealloc))
-      return true;
-
-  return false;
-}
-
 static bool scan_ivar_release(Stmt *S, ObjCIvarDecl *ID,
                               const ObjCPropertyDecl *PD,
                               Selector Release,
@@ -113,15 +92,12 @@ static void checkObjCDealloc(const CheckerBase *Checker,
 
   bool containsPointerIvar = false;
 
-  for (ObjCInterfaceDecl::ivar_iterator I=ID->ivar_begin(), E=ID->ivar_end();
-       I!=E; ++I) {
-
-    ObjCIvarDecl *ID = *I;
-    QualType T = ID->getType();
+  for (const auto *Ivar : ID->ivars()) {
+    QualType T = Ivar->getType();
 
     if (!T->isObjCObjectPointerType() ||
-        ID->hasAttr<IBOutletAttr>() || // Skip IBOutlets.
-        ID->hasAttr<IBOutletCollectionAttr>()) // Skip IBOutletCollections.
+        Ivar->hasAttr<IBOutletAttr>() || // Skip IBOutlets.
+        Ivar->hasAttr<IBOutletCollectionAttr>()) // Skip IBOutletCollections.
       continue;
 
     containsPointerIvar = true;
@@ -156,14 +132,12 @@ static void checkObjCDealloc(const CheckerBase *Checker,
   // Get the "dealloc" selector.
   IdentifierInfo* II = &Ctx.Idents.get("dealloc");
   Selector S = Ctx.Selectors.getSelector(0, &II);
-  ObjCMethodDecl *MD = 0;
+  const ObjCMethodDecl *MD = nullptr;
 
   // Scan the instance methods for "dealloc".
-  for (ObjCImplementationDecl::instmeth_iterator I = D->instmeth_begin(),
-       E = D->instmeth_end(); I!=E; ++I) {
-
-    if ((*I)->getSelector() == S) {
-      MD = *I;
+  for (const auto *I : D->instance_methods()) {
+    if (I->getSelector() == S) {
+      MD = I;
       break;
     }
   }
@@ -186,24 +160,6 @@ static void checkObjCDealloc(const CheckerBase *Checker,
     return;
   }
 
-  // dealloc found.  Scan for missing [super dealloc].
-  if (MD->getBody() && !scan_dealloc(MD->getBody(), S)) {
-
-    const char* name = LOpts.getGC() == LangOptions::NonGC
-                       ? "missing [super dealloc]"
-                       : "missing [super dealloc] (Hybrid MM, non-GC)";
-
-    std::string buf;
-    llvm::raw_string_ostream os(buf);
-    os << "The 'dealloc' instance method in Objective-C class '" << *D
-       << "' does not send a 'dealloc' message to its super class"
-           " (missing [super dealloc])";
-
-    BR.EmitBasicReport(MD, Checker, name, categories::CoreFoundationObjectiveC,
-                       os.str(), DLoc);
-    return;
-  }
-
   // Get the "release" selector.
   IdentifierInfo* RII = &Ctx.Idents.get("release");
   Selector RS = Ctx.Selectors.getSelector(0, &RII);
@@ -213,9 +169,7 @@ static void checkObjCDealloc(const CheckerBase *Checker,
 
   // Scan for missing and extra releases of ivars used by implementations
   // of synthesized properties
-  for (ObjCImplementationDecl::propimpl_iterator I = D->propimpl_begin(),
-       E = D->propimpl_end(); I!=E; ++I) {
-
+  for (const auto *I : D->property_impls()) {
     // We can only check the synthesized properties
     if (I->getPropertyImplementation() != ObjCPropertyImplDecl::Synthesize)
       continue;
@@ -240,7 +194,7 @@ static void checkObjCDealloc(const CheckerBase *Checker,
     bool requiresRelease = PD->getSetterKind() != ObjCPropertyDecl::Assign;
     if (scan_ivar_release(MD->getBody(), ID, PD, RS, SelfII, Ctx)
        != requiresRelease) {
-      const char *name = 0;
+      const char *name = nullptr;
       std::string buf;
       llvm::raw_string_ostream os(buf);
 
@@ -263,7 +217,7 @@ static void checkObjCDealloc(const CheckerBase *Checker,
       }
 
       PathDiagnosticLocation SDLoc =
-        PathDiagnosticLocation::createBegin(*I, BR.getSourceManager());
+        PathDiagnosticLocation::createBegin(I, BR.getSourceManager());
 
       BR.EmitBasicReport(MD, Checker, name,
                          categories::CoreFoundationObjectiveC, os.str(), SDLoc);

@@ -12,8 +12,8 @@
 ///
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_TOKENKINDS_H
-#define LLVM_CLANG_TOKENKINDS_H
+#ifndef LLVM_CLANG_BASIC_TOKENKINDS_H
+#define LLVM_CLANG_BASIC_TOKENKINDS_H
 
 #include "llvm/Support/Compiler.h"
 
@@ -22,7 +22,7 @@ namespace clang {
 namespace tok {
 
 /// \brief Provides a simple uniform namespace for tokens from all C languages.
-enum TokenKind LLVM_ENUM_INT_TYPE(unsigned short) {
+enum TokenKind : unsigned short {
 #define TOK(X) X,
 #include "clang/Basic/TokenKinds.def"
   NUM_TOKENS
@@ -86,9 +86,9 @@ inline bool isStringLiteral(TokenKind K) {
 /// constant, string, etc.
 inline bool isLiteral(TokenKind K) {
   return K == tok::numeric_constant || K == tok::char_constant ||
-         K == tok::wide_char_constant || K == tok::utf16_char_constant ||
-         K == tok::utf32_char_constant || isStringLiteral(K) ||
-         K == tok::angle_string_literal;
+         K == tok::wide_char_constant || K == tok::utf8_char_constant ||
+         K == tok::utf16_char_constant || K == tok::utf32_char_constant ||
+         isStringLiteral(K) || K == tok::angle_string_literal;
 }
 
 /// \brief Return true if this is any of tok::annot_* kinds.
