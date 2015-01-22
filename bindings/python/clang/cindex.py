@@ -1476,21 +1476,6 @@ class Cursor(Structure):
         """
         return TokenGroup.get_tokens(self._tu, self.extent)
 
-    def get_fields(self):
-        """Return an iterator for accessing the fields of this type."""
-
-        def visitor(field, children):
-            assert field != conf.lib.clang_getNullCursor()
-
-            # Create reference to TU so it isn't GC'd before Cursor.
-            field._tu = self._tu
-            fields.append(field)
-            return 1 # continue
-        fields = []
-        conf.lib.clang_Type_visitFields(self,
-                            callbacks['fields_visit'](visitor), fields)
-        return iter(fields)
-
     def get_field_offsetof(self):
         """Returns the offsetof the FIELD_DECL pointed by this Cursor."""
         return conf.lib.clang_Cursor_getOffsetOfField(self)
@@ -1910,6 +1895,21 @@ class Type(Structure):
         """
         return RefQualifierKind.from_id(
                 conf.lib.clang_Type_getCXXRefQualifier(self))
+
+    def get_fields(self):
+        """Return an iterator for accessing the fields of this type."""
+
+        def visitor(field, children):
+            assert field != conf.lib.clang_getNullCursor()
+
+            # Create reference to TU so it isn't GC'd before Cursor.
+            field._tu = self._tu
+            fields.append(field)
+            return 1 # continue
+        fields = []
+        conf.lib.clang_Type_visitFields(self,
+                            callbacks['fields_visit'](visitor), fields)
+        return iter(fields)
 
     @property
     def spelling(self):
