@@ -3282,43 +3282,6 @@ CINDEX_LINKAGE long long clang_Type_getSizeOf(CXType T);
 CINDEX_LINKAGE long long clang_Type_getOffsetOf(CXType T, const char *S);
 
 /**
- * \brief Visitor invoked for each field found by a traversal.
- *
- * This visitor function will be invoked for each field found by
- * clang_visitCursorFields(). Its first argument is the cursor being
- * visited, its second argument is the client data provided to
- * clang_visitCursorFields().
- *
- * The visitor should return one of the \c CXVisitorResult values
- * to direct clang_visitCursorFields().
- */
-typedef enum CXVisitorResult (*CXFieldVisitor)(CXCursor C,                                                  
-                                                  CXClientData client_data);
-
-/**
- * \brief Visit the fields of a particular type.
- *
- * This function visits all the direct fields of the given cursor,
- * invoking the given \p visitor function with the cursors of each
- * visited field. The traversal may be ended prematurely, if
- * the visitor returns \c CXFieldVisit_Break.
- *
- * \param T the record type whose field may be visited. 
- *
- * \param visitor the visitor function that will be invoked for each
- * field of \p T.
- *
- * \param client_data pointer data supplied by the client, which will
- * be passed to the visitor each time it is invoked.
- *
- * \returns a non-zero value if the traversal was terminated
- * prematurely by the visitor returning \c CXFieldVisit_Break.
- */
-CINDEX_LINKAGE unsigned clang_Type_visitFields(CXType T,
-                                               CXFieldVisitor visitor,
-                                               CXClientData client_data);
-
-/**
  * \brief Return the offset of the field represented by the Cursor.
  *
  * If the cursor is not a field declaration, -1 is returned.
@@ -5726,6 +5689,44 @@ CINDEX_LINKAGE void clang_indexLoc_getFileLocation(CXIdxLoc loc,
  */
 CINDEX_LINKAGE
 CXSourceLocation clang_indexLoc_getCXSourceLocation(CXIdxLoc loc);
+
+/**
+ * \brief Visitor invoked for each field found by a traversal.
+ *
+ * This visitor function will be invoked for each field found by
+ * clang_visitCursorFields(). Its first argument is the cursor being
+ * visited, its second argument is the client data provided to
+ * clang_visitCursorFields().
+ *
+ * The visitor should return one of the \c CXVisitorResult values
+ * to direct clang_visitCursorFields().
+ */
+typedef enum CXVisitorResult (*CXFieldVisitor)(CXCursor C,                                                  
+                                                  CXClientData client_data);
+
+/**
+ * \brief Visit the fields of a particular type.
+ *
+ * This function visits all the direct fields of the given cursor,
+ * invoking the given \p visitor function with the cursors of each
+ * visited field. The traversal may be ended prematurely, if
+ * the visitor returns \c CXFieldVisit_Break.
+ *
+ * \param T the record type whose field may be visited. 
+ *
+ * \param visitor the visitor function that will be invoked for each
+ * field of \p T.
+ *
+ * \param client_data pointer data supplied by the client, which will
+ * be passed to the visitor each time it is invoked.
+ *
+ * \returns a non-zero value if the traversal was terminated
+ * prematurely by the visitor returning \c CXFieldVisit_Break.
+ */
+CINDEX_LINKAGE unsigned clang_Type_visitFields(CXType T,
+                                               CXFieldVisitor visitor,
+                                               CXClientData client_data);
+
 
 /**
  * @}
