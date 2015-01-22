@@ -942,7 +942,7 @@ CXType clang_Type_getTemplateArgumentAsType(CXType CT, unsigned i) {
 }
 
 unsigned clang_Type_visitFields(CXType PT,
-                                CXVisitorResult visitor,
+                                CXFieldVisitor visitor,
                                 CXClientData client_data){
   CXCursor PC = clang_getTypeDeclaration(PT);
   if (clang_isInvalid(PC.kind))
