@@ -525,6 +525,33 @@ public:
   }
 };
 
+template <typename Target>
+class PS4OSTargetInfo : public OSTargetInfo<Target> {
+protected:
+  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
+                    MacroBuilder &Builder) const override {
+    Builder.defineMacro("__FreeBSD__", "9");
+    Builder.defineMacro("__FreeBSD_cc_version", "900001");
+    Builder.defineMacro("__KPRINTF_ATTRIBUTE__");
+    DefineStd(Builder, "unix", Opts);
+    Builder.defineMacro("__ELF__");
+    Builder.defineMacro("__PS4__");
+  }
+public:
+  PS4OSTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
+    this->WCharType = this->UnsignedShort;
+
+    this->UserLabelPrefix = "";
+
+    switch (Triple.getArch()) {
+    default:
+    case llvm::Triple::x86_64:
+      this->MCountName = ".mcount";
+      break;
+    }
+  }
+};
+
 // Solaris target
 template<typename Target>
 class SolarisTargetInfo : public OSTargetInfo<Target> {
@@ -658,11 +685,6 @@ public:
       assert(Triple.getArch() == llvm::Triple::le32);
       this->DescriptionString = "e-p:32:32-i64:64";
     }
-  }
-  typename Target::CallingConvCheckResult checkCallingConvention(
-      CallingConv CC) const override {
-    return CC == CC_PnaclCall ? Target::CCCR_OK :
-        Target::checkCallingConvention(CC);
   }
 };
 } // end anonymous namespace.
@@ -1570,8 +1592,15 @@ class R600TargetInfo : public TargetInfo {
 
 public:
   R600TargetInfo(const llvm::Triple &Triple)
-      : TargetInfo(Triple), GPU(GK_R600) {
-    DescriptionString = DescriptionStringR600;
+      : TargetInfo(Triple) {
+
+    if (Triple.getArch() == llvm::Triple::amdgcn) {
+      DescriptionString = DescriptionStringSI;
+      GPU = GK_SOUTHERN_ISLANDS;
+    } else {
+      DescriptionString = DescriptionStringR600;
+      GPU = GK_R600;
+    }
     AddrSpaceMap = &R600AddrSpaceMap;
     UseAddrSpaceMapMangling = true;
   }
@@ -5908,6 +5937,8 @@ public:
       : MipsTargetInfoBase(Triple, "o32", "mips32r2") {
     SizeType = UnsignedInt;
     PtrDiffType = SignedInt;
+    Int64Type = SignedLongLong;
+    IntMaxType = Int64Type;
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 32;
   }
   bool setABI(const std::string &Name) override {
@@ -6037,6 +6068,8 @@ public:
     PointerWidth = PointerAlign = 64;
     SizeType = UnsignedLong;
     PtrDiffType = SignedLong;
+    Int64Type = SignedLong;
+    IntMaxType = Int64Type;
   }
 
   void setN32ABITypes() {
@@ -6044,6 +6077,8 @@ public:
     PointerWidth = PointerAlign = 32;
     SizeType = UnsignedInt;
     PtrDiffType = SignedInt;
+    Int64Type = SignedLongLong;
+    IntMaxType = Int64Type;
   }
 
   bool setABI(const std::string &Name) override {
@@ -6807,6 +6842,8 @@ static TargetInfo *AllocateTarget(const llvm::Triple &Triple) {
     }
     case llvm::Triple::NaCl:
       return new NaClTargetInfo<X86_64TargetInfo>(Triple);
+    case llvm::Triple::PS4:
+      return new PS4OSTargetInfo<X86_64TargetInfo>(Triple);
     default:
       return new X86_64TargetInfo(Triple);
     }
