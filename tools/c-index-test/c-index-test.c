@@ -1250,7 +1250,7 @@ static void PrintTypeAndTypeKind(CXType T, const char *Format) {
   clang_disposeString(TypeKindSpelling);
 }
 
-static enum CXVisitorResult FieldVisitor(CXCursor C, 
+static enum CXVisitorResult FieldVisitor(CXCursor C,
                                          CXClientData client_data) {
     (*(int *) client_data)+=1;
     return CXVisit_Continue;
@@ -1384,9 +1384,9 @@ static enum CXChildVisitResult PrintTypeSize(CXCursor cursor, CXCursor p,
         Record = Parent;
         Parent = clang_getCursorSemanticParent(Record);
         RecordIsAnonymous = clang_Cursor_isAnonymous(Record);
-        /* Recurse as long as the parent is a CXType_Record and the Record 
+        /* Recurse as long as the parent is a CXType_Record and the Record
            is anonymous */
-      } while ( clang_getCursorType(Parent).kind == CXType_Record && 
+      } while ( clang_getCursorType(Parent).kind == CXType_Record &&
                 RecordIsAnonymous > 0);
       {
         long long Offset = clang_Type_getOffsetOf(clang_getCursorType(Record),

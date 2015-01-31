@@ -842,7 +842,7 @@ long long clang_Cursor_getOffsetOfField(CXCursor C) {
       return Error;
     // proceed with the offset calculation
     const Decl *D = cxcursor::getCursorDecl(C);
-    ASTContext &Ctx = cxcursor::getCursorContext(C);    
+    ASTContext &Ctx = cxcursor::getCursorContext(C);
     if (const FieldDecl *FD = dyn_cast_or_null<FieldDecl>(D))
       return Ctx.getFieldOffset(FD);
     if (const IndirectFieldDecl *IFD = dyn_cast_or_null<IndirectFieldDecl>(D))
