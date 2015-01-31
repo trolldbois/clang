@@ -5701,7 +5701,7 @@ CXSourceLocation clang_indexLoc_getCXSourceLocation(CXIdxLoc loc);
  * The visitor should return one of the \c CXVisitorResult values
  * to direct clang_visitCursorFields().
  */
-typedef enum CXVisitorResult (*CXFieldVisitor)(CXCursor C,                                                  
+typedef enum CXVisitorResult (*CXFieldVisitor)(CXCursor C,
                                                   CXClientData client_data);
 
 /**
@@ -5712,7 +5712,7 @@ typedef enum CXVisitorResult (*CXFieldVisitor)(CXCursor C,
  * visited field. The traversal may be ended prematurely, if
  * the visitor returns \c CXFieldVisit_Break.
  *
- * \param T the record type whose field may be visited. 
+ * \param T the record type whose field may be visited.
  *
  * \param visitor the visitor function that will be invoked for each
  * field of \p T.
