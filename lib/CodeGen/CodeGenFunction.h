@@ -263,6 +263,9 @@ public:
   /// potentially set the return value.
   bool SawAsmBlock;
 
+  /// Codegen is currently inside an SEH try block.
+  bool IsSEHTryScope;
+
   const CodeGen::CGBlockInfo *BlockInfo;
   llvm::Value *BlockPointer;
 
@@ -306,6 +309,8 @@ public:
   /// write the current selector value into this alloca.
   llvm::AllocaInst *EHSelectorSlot;
 
+  llvm::AllocaInst *AbnormalTerminationSlot;
+
   /// The implicit parameter to SEH filter functions of type
   /// 'EXCEPTION_POINTERS*'.
   ImplicitParamDecl *SEHPointersDecl;
@@ -346,6 +351,17 @@ public:
                llvm::Constant *beginCatchFn, llvm::Constant *endCatchFn,
                llvm::Constant *rethrowFn);
     void exit(CodeGenFunction &CGF);
+  };
+
+  /// Cleanups can be emitted for two reasons: normal control leaving a region
+  /// exceptional control flow leaving a region.
+  struct SEHFinallyInfo {
+    SEHFinallyInfo()
+        : FinallyBB(nullptr), ContBB(nullptr), ResumeBB(nullptr) {}
+
+    llvm::BasicBlock *FinallyBB;
+    llvm::BasicBlock *ContBB;
+    llvm::BasicBlock *ResumeBB;
   };
 
   /// pushFullExprCleanup - Push a cleanup to be run at the end of the
@@ -567,7 +583,10 @@ public:
 
       // If we should perform a cleanup, force them now.  Note that
       // this ends the cleanup scope before rescoping any labels.
-      if (PerformCleanup) ForceCleanup();
+      if (PerformCleanup) {
+        ApplyDebugLocation DL(CGF, Range.getEnd());
+        ForceCleanup();
+      }
     }
 
     /// \brief Force the emission of cleanups now, instead of waiting
@@ -1082,6 +1101,10 @@ public:
   llvm::Value *getExceptionSlot();
   llvm::Value *getEHSelectorSlot();
 
+  /// Stack slot that contains whether a __finally block is being executed as an
+  /// EH cleanup or as a normal cleanup.
+  llvm::Value *getAbnormalTerminationSlot();
+
   /// Returns the contents of the function's exception object and selector
   /// slots.
   llvm::Value *getExceptionFromSlot();
@@ -1100,6 +1123,11 @@ public:
   llvm::BasicBlock *getInvokeDest() {
     if (!EHStack.requiresLandingPad()) return nullptr;
     return getInvokeDestImpl();
+  }
+
+  bool currentFunctionUsesSEHTry() const {
+    const auto *FD = dyn_cast_or_null<FunctionDecl>(CurCodeDecl);
+    return FD && FD->usesSEHTry();
   }
 
   const TargetInfo &getTarget() const { return Target; }
@@ -1273,7 +1301,8 @@ public:
   /// legal to call this function even if there is no current insertion point.
   void FinishFunction(SourceLocation EndLoc=SourceLocation());
 
-  void StartThunk(llvm::Function *Fn, GlobalDecl GD, const CGFunctionInfo &FnInfo);
+  void StartThunk(llvm::Function *Fn, GlobalDecl GD,
+                  const CGFunctionInfo &FnInfo);
 
   void EmitCallAndReturnForThunk(llvm::Value *Callee, const ThunkInfo *Thunk);
 
@@ -1557,6 +1586,15 @@ public:
     bool IsVolatile = hasVolatileMember(EltTy);
     EmitAggregateCopy(DestPtr, SrcPtr, EltTy, IsVolatile, CharUnits::Zero(),
                       true);
+  }
+
+  void EmitAggregateCopyCtor(llvm::Value *DestPtr, llvm::Value *SrcPtr,
+                           QualType DestTy, QualType SrcTy) {
+    CharUnits DestTypeAlign = getContext().getTypeAlignInChars(DestTy);
+    CharUnits SrcTypeAlign = getContext().getTypeAlignInChars(SrcTy);
+    EmitAggregateCopy(DestPtr, SrcPtr, SrcTy, /*IsVolatile=*/false,
+                      std::min(DestTypeAlign, SrcTypeAlign),
+                      /*IsAssignment=*/false);
   }
 
   /// EmitAggregateCopy - Emit an aggregate copy.
@@ -1995,8 +2033,8 @@ public:
   void EmitCXXTryStmt(const CXXTryStmt &S);
   void EmitSEHTryStmt(const SEHTryStmt &S);
   void EmitSEHLeaveStmt(const SEHLeaveStmt &S);
-  void EnterSEHTryStmt(const SEHTryStmt &S);
-  void ExitSEHTryStmt(const SEHTryStmt &S);
+  void EnterSEHTryStmt(const SEHTryStmt &S, SEHFinallyInfo &FI);
+  void ExitSEHTryStmt(const SEHTryStmt &S, SEHFinallyInfo &FI);
 
   llvm::Function *GenerateSEHFilterFunction(CodeGenFunction &ParentCGF,
                                             const SEHExceptStmt &Except);
@@ -2004,6 +2042,7 @@ public:
   void EmitSEHExceptionCodeSave();
   llvm::Value *EmitSEHExceptionCode();
   llvm::Value *EmitSEHExceptionInfo();
+  llvm::Value *EmitSEHAbnormalTermination();
 
   void EmitCXXForRangeStmt(const CXXForRangeStmt &S,
                            ArrayRef<const Attr *> Attrs = None);
