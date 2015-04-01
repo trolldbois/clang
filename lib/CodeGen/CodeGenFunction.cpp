@@ -40,7 +40,7 @@ CodeGenFunction::CodeGenFunction(CodeGenModule &cgm, bool suppressNewContext)
       CurFn(nullptr), CapturedStmtInfo(nullptr),
       SanOpts(CGM.getLangOpts().Sanitize), IsSanitizerScope(false),
       CurFuncIsThunk(false), AutoreleaseResult(false), SawAsmBlock(false),
-      IsSEHTryScope(false), BlockInfo(nullptr), BlockPointer(nullptr),
+      BlockInfo(nullptr), BlockPointer(nullptr),
       LambdaThisCaptureField(nullptr), NormalCleanupDest(nullptr),
       NextCleanupDestIndex(1), FirstBlockInfo(nullptr), EHResumeBlock(nullptr),
       ExceptionSlot(nullptr), EHSelectorSlot(nullptr),
@@ -83,7 +83,7 @@ CodeGenFunction::~CodeGenFunction() {
     destroyBlockInfos(FirstBlockInfo);
 
   if (getLangOpts().OpenMP) {
-    CGM.getOpenMPRuntime().FunctionFinished(*this);
+    CGM.getOpenMPRuntime().functionFinished(*this);
   }
 }
 
@@ -802,17 +802,6 @@ static void TryMarkNoThrow(llvm::Function *F) {
   F->setDoesNotThrow();
 }
 
-static void EmitSizedDeallocationFunction(CodeGenFunction &CGF,
-                                          const FunctionDecl *UnsizedDealloc) {
-  // This is a weak discardable definition of the sized deallocation function.
-  CGF.CurFn->setLinkage(llvm::Function::LinkOnceAnyLinkage);
-
-  // Call the unsized deallocation function and forward the first argument
-  // unchanged.
-  llvm::Constant *Unsized = CGF.CGM.GetAddrOfFunction(UnsizedDealloc);
-  CGF.Builder.CreateCall(Unsized, &*CGF.CurFn->arg_begin());
-}
-
 void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
                                    const CGFunctionInfo &FnInfo) {
   const FunctionDecl *FD = cast<FunctionDecl>(GD.getDecl());
@@ -867,7 +856,7 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
   else if (isa<CXXConstructorDecl>(FD))
     EmitConstructorBody(Args);
   else if (getLangOpts().CUDA &&
-           !CGM.getCodeGenOpts().CUDAIsDevice &&
+           !getLangOpts().CUDAIsDevice &&
            FD->hasAttr<CUDAGlobalAttr>())
     CGM.getCUDARuntime().EmitDeviceStubBody(*this, Args);
   else if (isa<CXXConversionDecl>(FD) &&
@@ -888,11 +877,6 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
     emitImplicitAssignmentOperatorBody(Args);
   } else if (Stmt *Body = FD->getBody()) {
     EmitFunctionBody(Args, Body);
-  } else if (FunctionDecl *UnsizedDealloc =
-                 FD->getCorrespondingUnsizedGlobalDeallocationFunction()) {
-    // Global sized deallocation functions get an implicit weak definition if
-    // they don't have an explicit definition.
-    EmitSizedDeallocationFunction(*this, UnsizedDealloc);
   } else
     llvm_unreachable("no definition for emitted function");
 
