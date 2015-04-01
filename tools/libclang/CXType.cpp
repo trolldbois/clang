@@ -817,7 +817,7 @@ long long clang_Type_getOffsetOf(CXType PT, const char *S) {
         dyn_cast_or_null<RecordDecl>(cxcursor::getCursorDecl(PC));
   // verified in validateFieldParentType
   RD = RD->getDefinition();
-  RecordDecl::lookup_const_result Res = RD->lookup(FieldName);
+  RecordDecl::lookup_result Res = RD->lookup(FieldName);
   // If a field of the parent record is incomplete, lookup will fail.
   // and we would return InvalidFieldName instead of Incomplete.
   // But this erroneous results does protects again a hidden assertion failure
