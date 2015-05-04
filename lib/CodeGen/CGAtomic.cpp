@@ -189,7 +189,7 @@ namespace {
       assert(LVal.isSimple());
       llvm::Value *addr = getAtomicAddress();
       if (hasPadding())
-        addr = CGF.Builder.CreateStructGEP(addr, 0);
+        addr = CGF.Builder.CreateStructGEP(nullptr, addr, 0);
 
       return LValue::MakeAddr(addr, getValueType(), LVal.getAlignment(),
                               CGF.getContext(), LVal.getTBAAInfo());
@@ -1060,19 +1060,20 @@ RValue AtomicInfo::convertTempToRValue(llvm::Value *addr,
 
     // Drill into the padding structure if we have one.
     if (hasPadding())
-      addr = CGF.Builder.CreateStructGEP(addr, 0);
+      addr = CGF.Builder.CreateStructGEP(nullptr, addr, 0);
 
     // Otherwise, just convert the temporary to an r-value using the
     // normal conversion routine.
     return CGF.convertTempToRValue(addr, getValueType(), loc);
-  } else if (!AsValue)
+  }
+  if (!AsValue)
     // Get RValue from temp memory as atomic for non-simple lvalues
     return RValue::get(
         CGF.Builder.CreateAlignedLoad(addr, AtomicAlign.getQuantity()));
-  else if (LVal.isBitField())
+  if (LVal.isBitField())
     return CGF.EmitLoadOfBitfieldLValue(LValue::MakeBitfield(
         addr, LVal.getBitFieldInfo(), LVal.getType(), LVal.getAlignment()));
-  else if (LVal.isVectorElt())
+  if (LVal.isVectorElt())
     return CGF.EmitLoadOfLValue(LValue::MakeVectorElt(addr, LVal.getVectorIdx(),
                                                       LVal.getType(),
                                                       LVal.getAlignment()),
@@ -1501,7 +1502,7 @@ void CodeGenFunction::EmitAtomicStore(RValue rvalue, LValue dest,
       atomics.getAtomicType(), SourceLocation()));
   // Try to write new value using cmpxchg operation
   auto Pair = atomics.EmitAtomicCompareExchange(OriginalRValue, NewRValue, AO);
-  PHI->addIncoming(Pair.first.getScalarVal(), ContBB);
+  PHI->addIncoming(Pair.first.getScalarVal(), Builder.GetInsertBlock());
   Builder.CreateCondBr(Pair.second, ExitBB, ContBB);
   EmitBlock(ExitBB, /*IsFinished=*/true);
 }
@@ -1591,7 +1592,7 @@ void CodeGenFunction::EmitAtomicUpdate(
   auto Pair = Atomics.EmitAtomicCompareExchange(OriginalRValue, NewRVal, AO);
   OldVal = IsScalar ? Pair.first.getScalarVal()
                     : Atomics.convertRValueToInt(Pair.first);
-  PHI->addIncoming(OldVal, ContBB);
+  PHI->addIncoming(OldVal, Builder.GetInsertBlock());
   Builder.CreateCondBr(Pair.second, ExitBB, ContBB);
   EmitBlock(ExitBB, /*IsFinished=*/true);
 }

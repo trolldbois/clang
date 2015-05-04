@@ -615,7 +615,8 @@ bool Sema::MergeCXXFunctionDecl(FunctionDecl *New, FunctionDecl *Old,
       << New << New->isConstexpr();
     Diag(Old->getLocation(), diag::note_previous_declaration);
     Invalid = true;
-  } else if (!Old->isInlined() && New->isInlined() && Old->isDefined(Def)) {
+  } else if (!Old->getMostRecentDecl()->isInlined() && New->isInlined() &&
+             Old->isDefined(Def)) {
     // C++11 [dcl.fcn.spec]p4:
     //   If the definition of a function appears in a translation unit before its
     //   first declaration as inline, the program is ill-formed.
@@ -4802,6 +4803,9 @@ static void checkDLLAttribute(Sema &S, CXXRecordDecl *Class) {
         continue;
       }
     }
+
+    if (!cast<NamedDecl>(Member)->isExternallyVisible())
+      continue;
 
     if (!getDLLAttr(Member)) {
       auto *NewAttr =
@@ -10210,7 +10214,9 @@ void Sema::DefineImplicitCopyAssignment(SourceLocation CurrentLocation,
   
   // Assign non-static members.
   for (auto *Field : ClassDecl->fields()) {
-    if (Field->isUnnamedBitfield())
+    // FIXME: We should form some kind of AST representation for the implied
+    // memcpy in a union copy operation.
+    if (Field->isUnnamedBitfield() || Field->getParent()->isUnion())
       continue;
 
     if (Field->isInvalidDecl()) {
@@ -10640,7 +10646,9 @@ void Sema::DefineImplicitMoveAssignment(SourceLocation CurrentLocation,
 
   // Assign non-static members.
   for (auto *Field : ClassDecl->fields()) {
-    if (Field->isUnnamedBitfield())
+    // FIXME: We should form some kind of AST representation for the implied
+    // memcpy in a union copy operation.
+    if (Field->isUnnamedBitfield() || Field->getParent()->isUnion())
       continue;
 
     if (Field->isInvalidDecl()) {

@@ -1360,6 +1360,46 @@ void Parser::ProhibitCXX11Attributes(ParsedAttributesWithRange &attrs) {
   }
 }
 
+// As an exception to the rule, __declspec(align(...)) before the
+// class-key affects the type instead of the variable.
+void Parser::handleDeclspecAlignBeforeClassKey(ParsedAttributesWithRange &Attrs,
+                                               DeclSpec &DS,
+                                               Sema::TagUseKind TUK) {
+  if (TUK == Sema::TUK_Reference)
+    return;
+
+  ParsedAttributes &PA = DS.getAttributes();
+  AttributeList *AL = PA.getList();
+  AttributeList *Prev = nullptr;
+  while (AL) {
+    AttributeList *Next = AL->getNext();
+
+    // We only consider attributes using the appropriate '__declspec' spelling,
+    // this behavior doesn't extend to any other spellings.
+    if (AL->getKind() == AttributeList::AT_Aligned &&
+        AL->isDeclspecAttribute()) {
+      // Stitch the attribute into the tag's attribute list.
+      AL->setNext(nullptr);
+      Attrs.add(AL);
+
+      // Remove the attribute from the variable's attribute list.
+      if (Prev) {
+        // Set the last variable attribute's next attribute to be the attribute
+        // after the current one.
+        Prev->setNext(Next);
+      } else {
+        // Removing the head of the list requires us to reset the head to the
+        // next attribute.
+        PA.set(Next);
+      }
+    } else {
+      Prev = AL;
+    }
+
+    AL = Next;
+  }
+}
+
 /// ParseDeclaration - Parse a full 'declaration', which consists of
 /// declaration-specifiers, some number of declarators, and a semicolon.
 /// 'Context' should be a Declarator::TheContext value.  This returns the
@@ -3851,6 +3891,8 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
     return;
   }
 
+  handleDeclspecAlignBeforeClassKey(attrs, DS, TUK);
+
   bool Owned = false;
   bool IsDependent = false;
   const char *PrevSpec = nullptr;
@@ -3932,6 +3974,7 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
     Diag(Tok, diag::error_empty_enum);
 
   SmallVector<Decl *, 32> EnumConstantDecls;
+  SmallVector<SuppressAccessChecks, 32> EnumAvailabilityDiags;
 
   Decl *LastEnumConstDecl = nullptr;
 
@@ -3962,7 +4005,7 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
 
     SourceLocation EqualLoc;
     ExprResult AssignedVal;
-    ParsingDeclRAIIObject PD(*this, ParsingDeclRAIIObject::NoParent);
+    EnumAvailabilityDiags.emplace_back(*this);
 
     if (TryConsumeToken(tok::equal, EqualLoc)) {
       AssignedVal = ParseConstantExpression();
@@ -3976,7 +4019,7 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
                                                     IdentLoc, Ident,
                                                     attrs.getList(), EqualLoc,
                                                     AssignedVal.get());
-    PD.complete(EnumConstDecl);
+    EnumAvailabilityDiags.back().done();
 
     EnumConstantDecls.push_back(EnumConstDecl);
     LastEnumConstDecl = EnumConstDecl;
@@ -4031,6 +4074,14 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
                         EnumDecl, EnumConstantDecls,
                         getCurScope(),
                         attrs.getList());
+
+  // Now handle enum constant availability diagnostics.
+  assert(EnumConstantDecls.size() == EnumAvailabilityDiags.size());
+  for (size_t i = 0, e = EnumConstantDecls.size(); i != e; ++i) {
+    ParsingDeclRAIIObject PD(*this, ParsingDeclRAIIObject::NoParent);
+    EnumAvailabilityDiags[i].redelay();
+    PD.complete(EnumConstantDecls[i]);
+  }
 
   EnumScope.Exit();
   Actions.ActOnTagFinishDefinition(getCurScope(), EnumDecl,

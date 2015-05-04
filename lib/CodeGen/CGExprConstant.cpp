@@ -1115,7 +1115,7 @@ llvm::Constant *CodeGenModule::EmitConstantValue(const APValue &Value,
         unsigned AS = C->getType()->getPointerAddressSpace();
         llvm::Type *CharPtrTy = Int8Ty->getPointerTo(AS);
         llvm::Constant *Casted = llvm::ConstantExpr::getBitCast(C, CharPtrTy);
-        Casted = llvm::ConstantExpr::getGetElementPtr(Casted, Offset);
+        Casted = llvm::ConstantExpr::getGetElementPtr(Int8Ty, Casted, Offset);
         C = llvm::ConstantExpr::getPointerCast(Casted, C->getType());
       }
 
@@ -1421,8 +1421,7 @@ llvm::Constant *CodeGenModule::EmitNullConstant(QualType T) {
     return ::EmitNullConstant(*this, RD, /*complete object*/ true);
   }
 
-  assert(T->isMemberPointerType() && "Should only see member pointers here!");
-  assert(!T->getAs<MemberPointerType>()->getPointeeType()->isFunctionType() &&
+  assert(T->isMemberDataPointerType() &&
          "Should only see pointers to data members here!");
 
   return getCXXABI().EmitNullMemberPointer(T->castAs<MemberPointerType>());

@@ -202,6 +202,31 @@ static void instantiateDependentEnableIfAttr(
   New->addAttr(EIA);
 }
 
+// Constructs and adds to New a new instance of CUDALaunchBoundsAttr using
+// template A as the base and arguments from TemplateArgs.
+static void instantiateDependentCUDALaunchBoundsAttr(
+    Sema &S, const MultiLevelTemplateArgumentList &TemplateArgs,
+    const CUDALaunchBoundsAttr &Attr, Decl *New) {
+  // The alignment expression is a constant expression.
+  EnterExpressionEvaluationContext Unevaluated(S, Sema::ConstantEvaluated);
+
+  ExprResult Result = S.SubstExpr(Attr.getMaxThreads(), TemplateArgs);
+  if (Result.isInvalid())
+    return;
+  Expr *MaxThreads = Result.getAs<Expr>();
+
+  Expr *MinBlocks = nullptr;
+  if (Attr.getMinBlocks()) {
+    Result = S.SubstExpr(Attr.getMinBlocks(), TemplateArgs);
+    if (Result.isInvalid())
+      return;
+    MinBlocks = Result.getAs<Expr>();
+  }
+
+  S.AddLaunchBoundsAttr(Attr.getLocation(), New, MaxThreads, MinBlocks,
+                        Attr.getSpellingListIndex());
+}
+
 void Sema::InstantiateAttrs(const MultiLevelTemplateArgumentList &TemplateArgs,
                             const Decl *Tmpl, Decl *New,
                             LateInstantiatedAttrVec *LateAttrs,
@@ -230,6 +255,13 @@ void Sema::InstantiateAttrs(const MultiLevelTemplateArgumentList &TemplateArgs,
     if (EnableIf && EnableIf->getCond()->isValueDependent()) {
       instantiateDependentEnableIfAttr(*this, TemplateArgs, EnableIf, Tmpl,
                                        New);
+      continue;
+    }
+
+    if (const CUDALaunchBoundsAttr *CUDALaunchBounds =
+            dyn_cast<CUDALaunchBoundsAttr>(TmplAttr)) {
+      instantiateDependentCUDALaunchBoundsAttr(*this, TemplateArgs,
+                                               *CUDALaunchBounds, New);
       continue;
     }
 
@@ -1304,15 +1336,6 @@ static QualType adjustFunctionTypeForInstantiation(ASTContext &Context,
                                  NewFunc->getParamTypes(), NewEPI);
 }
 
-/// Return true if any redeclaration of FD was inline specified. Useful for
-/// propagating the 'inline' specifier onto function template instantiations.
-static bool isAnyRedeclInlineSpecified(const FunctionDecl *FD) {
-  for (const auto *R : FD->redecls())
-    if (R->isInlineSpecified())
-      return true;
-  return false;
-}
-
 /// Normal class members are of more specific types and therefore
 /// don't make it here.  This function serves two purposes:
 ///   1) instantiating function templates
@@ -1381,8 +1404,7 @@ Decl *TemplateDeclInstantiator::VisitFunctionDecl(FunctionDecl *D,
       FunctionDecl::Create(SemaRef.Context, DC, D->getInnerLocStart(),
                            D->getNameInfo(), T, TInfo,
                            D->getCanonicalDecl()->getStorageClass(),
-                           isAnyRedeclInlineSpecified(D),
-                           D->hasWrittenPrototype(),
+                           D->isInlineSpecified(), D->hasWrittenPrototype(),
                            D->isConstexpr());
   Function->setRangeEnd(D->getSourceRange().getEnd());
 
@@ -1679,7 +1701,7 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     Method = CXXConstructorDecl::Create(SemaRef.Context, Record,
                                         StartLoc, NameInfo, T, TInfo,
                                         Constructor->isExplicit(),
-                                        isAnyRedeclInlineSpecified(Constructor),
+                                        Constructor->isInlineSpecified(),
                                         false, Constructor->isConstexpr());
 
     // Claim that the instantiation of a constructor or constructor template
@@ -1714,12 +1736,12 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
   } else if (CXXDestructorDecl *Destructor = dyn_cast<CXXDestructorDecl>(D)) {
     Method = CXXDestructorDecl::Create(SemaRef.Context, Record,
                                        StartLoc, NameInfo, T, TInfo,
-                                       isAnyRedeclInlineSpecified(Destructor),
+                                       Destructor->isInlineSpecified(),
                                        false);
   } else if (CXXConversionDecl *Conversion = dyn_cast<CXXConversionDecl>(D)) {
     Method = CXXConversionDecl::Create(SemaRef.Context, Record,
                                        StartLoc, NameInfo, T, TInfo,
-                                       isAnyRedeclInlineSpecified(Conversion),
+                                       Conversion->isInlineSpecified(),
                                        Conversion->isExplicit(),
                                        Conversion->isConstexpr(),
                                        Conversion->getLocEnd());
@@ -1727,7 +1749,7 @@ TemplateDeclInstantiator::VisitCXXMethodDecl(CXXMethodDecl *D,
     StorageClass SC = D->isStatic() ? SC_Static : SC_None;
     Method = CXXMethodDecl::Create(SemaRef.Context, Record,
                                    StartLoc, NameInfo, T, TInfo,
-                                   SC, isAnyRedeclInlineSpecified(D),
+                                   SC, D->isInlineSpecified(),
                                    D->isConstexpr(), D->getLocEnd());
   }
 
@@ -4411,6 +4433,14 @@ NamedDecl *Sema::FindInstantiatedDecl(SourceLocation Loc, NamedDecl *D,
 
     if (D->isInvalidDecl())
       return nullptr;
+
+    // Tag type may be referenced prior to definition, in this case it must be
+    // instantiated now.
+    if (isa<TagDecl>(D)) {
+      Decl *Inst = SubstDecl(D, CurContext, TemplateArgs);
+      CurrentInstantiationScope->InstantiatedLocal(D, Inst);
+      return cast<TypeDecl>(Inst);
+    }
 
     // If we didn't find the decl, then we must have a label decl that hasn't
     // been found yet.  Lazily instantiate it and return it now.

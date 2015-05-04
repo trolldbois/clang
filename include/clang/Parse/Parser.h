@@ -235,7 +235,7 @@ class Parser : public CodeCompletionHandler {
 
 public:
   Parser(Preprocessor &PP, Sema &Actions, bool SkipFunctionBodies);
-  ~Parser();
+  ~Parser() override;
 
   const LangOptions &getLangOpts() const { return PP.getLangOpts(); }
   const TargetInfo &getTargetInfo() const { return PP.getTargetInfo(); }
@@ -887,7 +887,7 @@ private:
   class LateParsedClass : public LateParsedDeclaration {
   public:
     LateParsedClass(Parser *P, ParsingClass *C);
-    virtual ~LateParsedClass();
+    ~LateParsedClass() override;
 
     void ParseLexedMethodDeclarations() override;
     void ParseLexedMemberInitializers() override;
@@ -1240,6 +1240,7 @@ private:
   bool ParseObjCProtocolReferences(SmallVectorImpl<Decl *> &P,
                                    SmallVectorImpl<SourceLocation> &PLocs,
                                    bool WarnOnDeclarations,
+                                   bool ForObjCContainer,
                                    SourceLocation &LAngleLoc,
                                    SourceLocation &EndProtoLoc);
   bool ParseObjCProtocolQualifiers(DeclSpec &DS);
@@ -1978,6 +1979,9 @@ private:
   }
   void DiagnoseMisplacedCXX11Attribute(ParsedAttributesWithRange &Attrs,
                                        SourceLocation CorrectLocation);
+
+  void handleDeclspecAlignBeforeClassKey(ParsedAttributesWithRange &Attrs,
+                                         DeclSpec &DS, Sema::TagUseKind TUK);
 
   void ProhibitAttributes(ParsedAttributesWithRange &attrs) {
     if (!attrs.Range.isValid()) return;

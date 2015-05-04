@@ -1798,6 +1798,14 @@ void OMPClauseWriter::VisitOMPLastprivateClause(OMPLastprivateClause *C) {
   Writer->Writer.AddSourceLocation(C->getLParenLoc(), Record);
   for (auto *VE : C->varlists())
     Writer->Writer.AddStmt(VE);
+  for (auto *E : C->private_copies())
+    Writer->Writer.AddStmt(E);
+  for (auto *E : C->source_exprs())
+    Writer->Writer.AddStmt(E);
+  for (auto *E : C->destination_exprs())
+    Writer->Writer.AddStmt(E);
+  for (auto *E : C->assignment_ops())
+    Writer->Writer.AddStmt(E);
 }
 
 void OMPClauseWriter::VisitOMPSharedClause(OMPSharedClause *C) {
@@ -1815,6 +1823,12 @@ void OMPClauseWriter::VisitOMPReductionClause(OMPReductionClause *C) {
   Writer->Writer.AddDeclarationNameInfo(C->getNameInfo(), Record);
   for (auto *VE : C->varlists())
     Writer->Writer.AddStmt(VE);
+  for (auto *E : C->lhs_exprs())
+    Writer->Writer.AddStmt(E);
+  for (auto *E : C->rhs_exprs())
+    Writer->Writer.AddStmt(E);
+  for (auto *E : C->reduction_ops())
+    Writer->Writer.AddStmt(E);
 }
 
 void OMPClauseWriter::VisitOMPLinearClause(OMPLinearClause *C) {
@@ -1851,6 +1865,12 @@ void OMPClauseWriter::VisitOMPCopyinClause(OMPCopyinClause *C) {
   Writer->Writer.AddSourceLocation(C->getLParenLoc(), Record);
   for (auto *VE : C->varlists())
     Writer->Writer.AddStmt(VE);
+  for (auto *E : C->source_exprs())
+    Writer->Writer.AddStmt(E);
+  for (auto *E : C->destination_exprs())
+    Writer->Writer.AddStmt(E);
+  for (auto *E : C->assignment_ops())
+    Writer->Writer.AddStmt(E);
 }
 
 void OMPClauseWriter::VisitOMPCopyprivateClause(OMPCopyprivateClause *C) {

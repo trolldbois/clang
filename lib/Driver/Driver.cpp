@@ -989,7 +989,8 @@ static bool DiagnoseInputExistence(const Driver &D, const DerivedArgList &Args,
   if (llvm::sys::fs::exists(Twine(Path)))
     return true;
 
-  if (D.IsCLMode() && llvm::sys::Process::FindInEnvPath("LIB", Value))
+  if (D.IsCLMode() && !llvm::sys::path::is_absolute(Twine(Path)) &&
+      llvm::sys::Process::FindInEnvPath("LIB", Value))
     return true;
 
   D.Diag(clang::diag::err_drv_no_such_file) << Path;
@@ -2152,7 +2153,7 @@ bool Driver::GetReleaseVersion(const char *Str, unsigned &Major,
 
   Major = Minor = Micro = 0;
   if (*Str == '\0')
-    return true;
+    return false;
 
   char *End;
   Major = (unsigned) strtol(Str, &End, 10);

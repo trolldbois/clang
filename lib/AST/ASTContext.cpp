@@ -1335,7 +1335,7 @@ CharUnits ASTContext::getDeclAlign(const Decl *D, bool ForAlignof) const {
       }
       Align = std::max(Align, getPreferredTypeAlign(T.getTypePtr()));
       if (const VarDecl *VD = dyn_cast<VarDecl>(D)) {
-        if (VD->hasGlobalStorage())
+        if (VD->hasGlobalStorage() && !ForAlignof)
           Align = std::max(Align, getTargetInfo().getMinGlobalAlign());
       }
     }
@@ -1797,11 +1797,16 @@ unsigned ASTContext::getPreferredTypeAlign(const Type *T) const {
   TypeInfo TI = getTypeInfo(T);
   unsigned ABIAlign = TI.Align;
 
+  T = T->getBaseElementTypeUnsafe();
+
+  // The preferred alignment of member pointers is that of a pointer.
+  if (T->isMemberPointerType())
+    return getPreferredTypeAlign(getPointerDiffType().getTypePtr());
+
   if (Target->getTriple().getArch() == llvm::Triple::xcore)
     return ABIAlign;  // Never overalign on XCore.
 
   // Double and long long should be naturally aligned if possible.
-  T = T->getBaseElementTypeUnsafe();
   if (const ComplexType *CT = T->getAs<ComplexType>())
     T = CT->getElementType().getTypePtr();
   if (const EnumType *ET = T->getAs<EnumType>())
@@ -1815,6 +1820,13 @@ unsigned ASTContext::getPreferredTypeAlign(const Type *T) const {
       return std::max(ABIAlign, (unsigned)getTypeSize(T));
 
   return ABIAlign;
+}
+
+/// getTargetDefaultAlignForAttributeAligned - Return the default alignment
+/// for __attribute__((aligned)) on this target, to be used if no alignment
+/// value is specified.
+unsigned ASTContext::getTargetDefaultAlignForAttributeAligned(void) const {
+  return getTargetInfo().getDefaultAlignForAttributeAligned();
 }
 
 /// getAlignOfGlobalVar - Return the alignment in bits that should be given
@@ -3358,7 +3370,7 @@ ASTContext::getElaboratedType(ElaboratedTypeKeyword Keyword,
     (void)CheckT;
   }
 
-  T = new (*this) ElaboratedType(Keyword, NNS, NamedType, Canon);
+  T = new (*this, TypeAlignment) ElaboratedType(Keyword, NNS, NamedType, Canon);
   Types.push_back(T);
   ElaboratedTypes.InsertNode(T, InsertPos);
   return QualType(T, 0);
@@ -3382,7 +3394,7 @@ ASTContext::getParenType(QualType InnerType) const {
     (void)CheckT;
   }
 
-  T = new (*this) ParenType(InnerType, Canon);
+  T = new (*this, TypeAlignment) ParenType(InnerType, Canon);
   Types.push_back(T);
   ParenTypes.InsertNode(T, InsertPos);
   return QualType(T, 0);
@@ -3411,7 +3423,7 @@ QualType ASTContext::getDependentNameType(ElaboratedTypeKeyword Keyword,
   if (T)
     return QualType(T, 0);
 
-  T = new (*this) DependentNameType(Keyword, NNS, Name, Canon);
+  T = new (*this, TypeAlignment) DependentNameType(Keyword, NNS, Name, Canon);
   Types.push_back(T);
   DependentNameTypes.InsertNode(T, InsertPos);
   return QualType(T, 0);
@@ -3513,7 +3525,8 @@ QualType ASTContext::getPackExpansionType(QualType Pattern,
     }
   }
 
-  T = new (*this) PackExpansionType(Pattern, Canon, NumExpansions);
+  T = new (*this, TypeAlignment)
+      PackExpansionType(Pattern, Canon, NumExpansions);
   Types.push_back(T);
   PackExpansionTypes.InsertNode(T, InsertPos);
   return QualType(T, 0);

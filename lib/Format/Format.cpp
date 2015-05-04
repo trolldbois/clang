@@ -174,6 +174,7 @@ template <> struct MappingTraits<FormatStyle> {
     IO.mapOptional("AlignEscapedNewlinesLeft", Style.AlignEscapedNewlinesLeft);
     IO.mapOptional("AlignOperands", Style.AlignOperands);
     IO.mapOptional("AlignTrailingComments", Style.AlignTrailingComments);
+    IO.mapOptional("AlignConsecutiveAssignments", Style.AlignConsecutiveAssignments);
     IO.mapOptional("AllowAllParametersOfDeclarationOnNextLine",
                    Style.AllowAllParametersOfDeclarationOnNextLine);
     IO.mapOptional("AllowShortBlocksOnASingleLine",
@@ -329,6 +330,7 @@ FormatStyle getLLVMStyle() {
   LLVMStyle.AlignAfterOpenBracket = true;
   LLVMStyle.AlignOperands = true;
   LLVMStyle.AlignTrailingComments = true;
+  LLVMStyle.AlignConsecutiveAssignments = false;
   LLVMStyle.AllowAllParametersOfDeclarationOnNextLine = true;
   LLVMStyle.AllowShortFunctionsOnASingleLine = FormatStyle::SFS_All;
   LLVMStyle.AllowShortBlocksOnASingleLine = false;
@@ -780,12 +782,21 @@ private:
       return false;
 
     FormatToken *EndBacktick = Tokens.back();
-    if (!(EndBacktick->is(tok::unknown) && EndBacktick->TokenText == "`"))
+    // Backticks get lexed as tok::unknown tokens. If a template string contains
+    // a comment start, it gets lexed as a tok::comment, or tok::unknown if
+    // unterminated.
+    if (!EndBacktick->isOneOf(tok::comment, tok::unknown))
+      return false;
+    size_t CommentBacktickPos = EndBacktick->TokenText.find('`');
+    // Unknown token that's not actually a backtick, or a comment that doesn't
+    // contain a backtick.
+    if (CommentBacktickPos == StringRef::npos)
       return false;
 
     unsigned TokenCount = 0;
     bool IsMultiline = false;
-    unsigned EndColumnInFirstLine = 0;
+    unsigned EndColumnInFirstLine =
+        EndBacktick->OriginalColumn + EndBacktick->ColumnWidth;
     for (auto I = Tokens.rbegin() + 1, E = Tokens.rend(); I != E; I++) {
       ++TokenCount;
       if (I[0]->NewlinesBefore > 0 || I[0]->IsMultiline)
@@ -812,10 +823,26 @@ private:
 
       Tokens.resize(Tokens.size() - TokenCount);
       Tokens.back()->Type = TT_TemplateString;
-      const char *EndOffset = EndBacktick->TokenText.data() + 1;
+      const char *EndOffset =
+          EndBacktick->TokenText.data() + 1 + CommentBacktickPos;
+      if (CommentBacktickPos != 0) {
+        // If the backtick was not the first character (e.g. in a comment),
+        // re-lex after the backtick position.
+        SourceLocation Loc = EndBacktick->Tok.getLocation();
+        resetLexer(SourceMgr.getFileOffset(Loc) + CommentBacktickPos + 1);
+      }
       Tokens.back()->TokenText =
           StringRef(Tokens.back()->TokenText.data(),
                     EndOffset - Tokens.back()->TokenText.data());
+
+      unsigned EndOriginalColumn = EndBacktick->OriginalColumn;
+      if (EndOriginalColumn == 0) {
+        SourceLocation Loc = EndBacktick->Tok.getLocation();
+        EndOriginalColumn = SourceMgr.getSpellingColumnNumber(Loc);
+      }
+      // If the ` is further down within the token (e.g. in a comment).
+      EndOriginalColumn += CommentBacktickPos;
+
       if (IsMultiline) {
         // ColumnWidth is from backtick to last token in line.
         // LastLineColumnWidth is 0 to backtick.
@@ -823,12 +850,12 @@ private:
         //     until here`;
         Tokens.back()->ColumnWidth =
             EndColumnInFirstLine - Tokens.back()->OriginalColumn;
-        Tokens.back()->LastLineColumnWidth = EndBacktick->OriginalColumn;
+        Tokens.back()->LastLineColumnWidth = EndOriginalColumn;
         Tokens.back()->IsMultiline = true;
       } else {
         // Token simply spans from start to end, +1 for the ` itself.
         Tokens.back()->ColumnWidth =
-            EndBacktick->OriginalColumn - Tokens.back()->OriginalColumn + 1;
+            EndOriginalColumn - Tokens.back()->OriginalColumn + 1;
       }
       return true;
     }
@@ -1088,9 +1115,9 @@ private:
       Column = FormatTok->LastLineColumnWidth;
     }
 
-    FormatTok->IsForEachMacro =
-        std::binary_search(ForEachMacros.begin(), ForEachMacros.end(),
-                           FormatTok->Tok.getIdentifierInfo());
+    if (std::find(ForEachMacros.begin(), ForEachMacros.end(),
+                  FormatTok->Tok.getIdentifierInfo()) != ForEachMacros.end())
+      FormatTok->Type = TT_ForEachMacro;
 
     return FormatTok;
   }
@@ -1506,8 +1533,7 @@ LangOptions getFormattingLangOpts(const FormatStyle &Style) {
   LangOpts.CPlusPlus11 = Style.Standard == FormatStyle::LS_Cpp03 ? 0 : 1;
   LangOpts.CPlusPlus14 = Style.Standard == FormatStyle::LS_Cpp03 ? 0 : 1;
   LangOpts.LineComment = 1;
-  bool AlternativeOperators = Style.Language != FormatStyle::LK_JavaScript &&
-                              Style.Language != FormatStyle::LK_Java;
+  bool AlternativeOperators = Style.Language == FormatStyle::LK_Cpp;
   LangOpts.CXXOperatorNames = AlternativeOperators ? 1 : 0;
   LangOpts.Bool = 1;
   LangOpts.ObjC1 = 1;

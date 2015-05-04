@@ -543,9 +543,7 @@ namespace clang {
       /// macro definition.
       MACRO_OFFSET = 47,
 
-      /// \brief Mapping table from the identifier ID to the offset of the
-      /// macro directive history for the identifier.
-      MACRO_TABLE = 48,
+      // ID 48 used to be a table of macros.
 
       /// \brief Record code for undefined but used functions and variables that
       /// need a definition in this TU.
@@ -602,7 +600,11 @@ namespace clang {
       PP_TOKEN = 3,
 
       /// \brief The macro directives history for a particular identifier.
-      PP_MACRO_DIRECTIVE_HISTORY = 4
+      PP_MACRO_DIRECTIVE_HISTORY = 4,
+
+      /// \brief A macro directive exported by a module.
+      /// [PP_MODULE_MACRO, SubmoduleID, MacroID, (Overridden SubmoduleID)*]
+      PP_MODULE_MACRO = 5,
     };
 
     /// \brief Record types used within a preprocessor detail block.

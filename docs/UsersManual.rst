@@ -589,6 +589,25 @@ Current limitations
    translated from debug annotations. That translation can be lossy,
    which results in some remarks having no location information.
 
+Other Options
+-------------
+Clang options that that don't fit neatly into other categories.
+
+.. option:: -MV
+
+  When emitting a dependency file, use formatting conventions appropriate
+  for NMake or Jom. Ignored unless another option causes Clang to emit a
+  dependency file.
+
+When Clang emits a dependency file (e.g., you supplied the -M option)
+most filenames can be written to the file without any special formatting.
+Different Make tools will treat different sets of characters as "special"
+and use different conventions for telling the Make tool that the character
+is actually part of the filename. Normally Clang uses backslash to "escape"
+a special character, which is the convention used by GNU Make. The -MV
+option tells Clang to put double-quotes around the entire filename, which
+is the convention used by NMake and Jom.
+
 
 Language and Target-Independent Features
 ========================================
@@ -974,7 +993,9 @@ are listed below.
       dynamic type. Implies ``-flto``.
    -  ``-fsanitize=cfi-unrelated-cast``: Cast from ``void*`` or another
       unrelated type to the wrong dynamic type. Implies ``-flto``.
-   -  ``-fsanitize=cfi-vptr``: Use of an object whose vptr is of the
+   -  ``-fsanitize=cfi-nvcall``: Non-virtual call via an object whose vptr is of
+      the wrong dynamic type. Implies ``-flto``.
+   -  ``-fsanitize=cfi-vcall``: Virtual call via an object whose vptr is of the
       wrong dynamic type. Implies ``-flto``.
    -  ``-fsanitize=enum``: Load of a value of an enumerated type which
       is not in the range of representable values for that enumerated

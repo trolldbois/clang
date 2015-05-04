@@ -1749,7 +1749,7 @@ NamedDecl *Sema::LazilyCreateBuiltin(IdentifierInfo *II, unsigned ID,
                                            Loc, Loc, II, R, /*TInfo=*/nullptr,
                                            SC_Extern,
                                            false,
-                                           /*hasPrototype=*/true);
+                                           R->isFunctionProtoType());
   New->setImplicit();
 
   // Create Decl objects for each parameter, adding them to the
@@ -4891,6 +4891,8 @@ static QualType TryToFixInvalidVariablyModifiedType(QualType T,
 
 static void
 FixInvalidVariablyModifiedTypeLoc(TypeLoc SrcTL, TypeLoc DstTL) {
+  SrcTL = SrcTL.getUnqualifiedLoc();
+  DstTL = DstTL.getUnqualifiedLoc();
   if (PointerTypeLoc SrcPTL = SrcTL.getAs<PointerTypeLoc>()) {
     PointerTypeLoc DstPTL = DstTL.castAs<PointerTypeLoc>();
     FixInvalidVariablyModifiedTypeLoc(SrcPTL.getPointeeLoc(),
@@ -5227,11 +5229,12 @@ static void checkAttributesAfterMerging(Sema &S, NamedDecl &ND) {
     }
   }
 
-  // 'selectany' only applies to externally visible varable declarations.
+  // 'selectany' only applies to externally visible variable declarations.
   // It does not apply to functions.
   if (SelectAnyAttr *Attr = ND.getAttr<SelectAnyAttr>()) {
     if (isa<FunctionDecl>(ND) || !ND.isExternallyVisible()) {
-      S.Diag(Attr->getLocation(), diag::err_attribute_selectany_non_extern_data);
+      S.Diag(Attr->getLocation(),
+             diag::err_attribute_selectany_non_extern_data);
       ND.dropAttr<SelectAnyAttr>();
     }
   }
@@ -5750,6 +5753,7 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   if (IsLocalExternDecl)
     NewVD->setLocalExternDecl();
 
+  bool EmitTLSUnsupportedError = false;
   if (DeclSpec::TSCS TSCS = D.getDeclSpec().getThreadStorageClassSpec()) {
     // C++11 [dcl.stc]p4:
     //   When thread_local is applied to a variable of block scope the
@@ -5764,10 +5768,20 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
       Diag(D.getDeclSpec().getThreadStorageClassSpecLoc(),
            diag::err_thread_non_global)
         << DeclSpec::getSpecifierName(TSCS);
-    else if (!Context.getTargetInfo().isTLSSupported())
-      Diag(D.getDeclSpec().getThreadStorageClassSpecLoc(),
-           diag::err_thread_unsupported);
-    else
+    else if (!Context.getTargetInfo().isTLSSupported()) {
+      if (getLangOpts().CUDA) {
+        // Postpone error emission until we've collected attributes required to
+        // figure out whether it's a host or device variable and whether the
+        // error should be ignored.
+        EmitTLSUnsupportedError = true;
+        // We still need to mark the variable as TLS so it shows up in AST with
+        // proper storage class for other tools to use even if we're not going
+        // to emit any code for it.
+        NewVD->setTSCSpec(TSCS);
+      } else
+        Diag(D.getDeclSpec().getThreadStorageClassSpecLoc(),
+             diag::err_thread_unsupported);
+    } else
       NewVD->setTSCSpec(TSCS);
   }
 
@@ -5816,6 +5830,9 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   ProcessDeclAttributes(S, NewVD, D);
 
   if (getLangOpts().CUDA) {
+    if (EmitTLSUnsupportedError && DeclAttrsMatchCUDAMode(getLangOpts(), NewVD))
+      Diag(D.getDeclSpec().getThreadStorageClassSpecLoc(),
+           diag::err_thread_unsupported);
     // CUDA B.2.5: "__shared__ and __constant__ variables have implied static
     // storage [duration]."
     if (SC == SC_None && S->getFnParent() != nullptr &&
@@ -7489,23 +7506,10 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   // Handle attributes.
   ProcessDeclAttributes(S, NewFD, D);
 
-  QualType RetType = NewFD->getReturnType();
-  const CXXRecordDecl *Ret = RetType->isRecordType() ?
-      RetType->getAsCXXRecordDecl() : RetType->getPointeeCXXRecordDecl();
-  if (!NewFD->isInvalidDecl() && !NewFD->hasAttr<WarnUnusedResultAttr>() &&
-      Ret && Ret->hasAttr<WarnUnusedResultAttr>()) {
-    const CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(NewFD);
-    // Attach WarnUnusedResult to functions returning types with that attribute.
-    // Don't apply the attribute to that type's own non-static member functions
-    // (to avoid warning on things like assignment operators)
-    if (!MD || MD->getParent() != Ret)
-      NewFD->addAttr(WarnUnusedResultAttr::CreateImplicit(Context));
-  }
-
   if (getLangOpts().OpenCL) {
     // OpenCL v1.1 s6.5: Using an address space qualifier in a function return
     // type declaration will generate a compilation error.
-    unsigned AddressSpace = RetType.getAddressSpace();
+    unsigned AddressSpace = NewFD->getReturnType().getAddressSpace();
     if (AddressSpace == LangAS::opencl_local ||
         AddressSpace == LangAS::opencl_global ||
         AddressSpace == LangAS::opencl_constant) {
@@ -8261,6 +8265,12 @@ void Sema::CheckMain(FunctionDecl* FD, const DeclSpec& DS) {
   assert(FD->getNumParams() == nparams);
 
   bool HasExtraParameters = (nparams > 3);
+
+  if (FTP->isVariadic()) {
+    Diag(FD->getLocation(), diag::ext_variadic_main);
+    // FIXME: if we had information about the location of the ellipsis, we
+    // could add a FixIt hint to remove it as a parameter.
+  }
 
   // Darwin passes an undocumented fourth argument of type char**.  If
   // other platforms start sprouting these, the logic below will start
@@ -10581,6 +10591,23 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
         Context.adjustDeducedFunctionResultType(
             FD, SubstAutoType(ResultType.getType(), Context.VoidTy));
       }
+    } else if (getLangOpts().CPlusPlus11 && isLambdaCallOperator(FD)) {
+      auto *LSI = getCurLambda();
+      if (LSI->HasImplicitReturnType) {
+        deduceClosureReturnType(*LSI);
+
+        // C++11 [expr.prim.lambda]p4:
+        //   [...] if there are no return statements in the compound-statement
+        //   [the deduced type is] the type void
+        QualType RetType =
+            LSI->ReturnType.isNull() ? Context.VoidTy : LSI->ReturnType;
+
+        // Update the return type to the deduced type.
+        const FunctionProtoType *Proto =
+            FD->getType()->getAs<FunctionProtoType>();
+        FD->setType(Context.getFunctionType(RetType, Proto->getParamTypes(),
+                                            Proto->getExtProtoInfo()));
+      }
     }
 
     // The only way to be included in UndefinedButUsed is if there is an
@@ -12485,8 +12512,10 @@ FieldDecl *Sema::CheckFieldDecl(DeclarationName Name, QualType T,
     InvalidDecl = true;
 
   bool ZeroWidth = false;
+  if (InvalidDecl)
+    BitWidth = nullptr;
   // If this is declared as a bit-field, check the bit-field.
-  if (!InvalidDecl && BitWidth) {
+  if (BitWidth) {
     BitWidth = VerifyBitField(Loc, II, T, Record->isMsStruct(Context), BitWidth,
                               &ZeroWidth).get();
     if (!BitWidth) {
@@ -14059,8 +14088,7 @@ void Sema::ActOnModuleInclude(SourceLocation DirectiveLoc, Module *Mod) {
   checkModuleImportContext(*this, Mod, DirectiveLoc, CurContext);
 
   // FIXME: Should we synthesize an ImportDecl here?
-  getModuleLoader().makeModuleVisible(Mod, Module::AllVisible, DirectiveLoc,
-                                      /*Complain=*/true);
+  getModuleLoader().makeModuleVisible(Mod, Module::AllVisible, DirectiveLoc);
 }
 
 void Sema::createImplicitModuleImportForErrorRecovery(SourceLocation Loc,
@@ -14077,8 +14105,7 @@ void Sema::createImplicitModuleImportForErrorRecovery(SourceLocation Loc,
   Consumer.HandleImplicitImportDecl(ImportD);
 
   // Make the module visible.
-  getModuleLoader().makeModuleVisible(Mod, Module::AllVisible, Loc,
-                                      /*Complain=*/false);
+  getModuleLoader().makeModuleVisible(Mod, Module::AllVisible, Loc);
 }
 
 void Sema::ActOnPragmaRedefineExtname(IdentifierInfo* Name,
